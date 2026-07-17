@@ -47,6 +47,27 @@ typedef struct Arena Arena;
 #define OS_LINUX 0
 #endif
 
+////////////////////////////////
+// Architecture detection
+//
+// Exactly one of these is 1. They are always defined, so test them with
+// `#if ARCH_ARM64` and never with `#ifdef`.
+
+#if defined(__aarch64__) || defined(_M_ARM64)
+#define ARCH_ARM64 1
+#elif defined(__x86_64__) || defined(_M_X64)
+#define ARCH_X64 1
+#else
+#error "base_os.h: unsupported architecture"
+#endif
+
+#if !defined(ARCH_ARM64)
+#define ARCH_ARM64 0
+#endif
+#if !defined(ARCH_X64)
+#define ARCH_X64 0
+#endif
+
 #define OS_PATH_MAX 4096
 
 // Opaque platform handle. Zero means invalid.
@@ -69,6 +90,23 @@ void *os_reserve(u64 size);
 b32 os_commit(void *ptr, u64 size);
 void os_decommit(void *ptr, u64 size);
 void os_release(void *ptr, u64 size);
+
+////////////////////////////////
+// Executable memory
+//
+// Reserve and commit as above, but the committed pages can be jumped to. This
+// is a separate reservation rather than a flag on os_reserve because Apple
+// Silicon only grants execute rights at mmap time and mprotect will not add
+// them to an existing mapping afterward. os_release frees these too.
+
+void *os_reserve_exec(u64 size);
+b32 os_commit_exec(void *ptr, u64 size);
+
+// Brackets every write to committed exec memory, and publishes the bytes to the
+// instruction cache. The underlying toggle is per-thread rather than per-
+// mapping, so these must not nest.
+void os_exec_write_begin(void);
+void os_exec_write_end(void *code, u64 size);
 
 ////////////////////////////////
 // Files
@@ -148,6 +186,26 @@ void os_release(void *ptr, u64 size)
 {
     Unused(size); // MEM_RELEASE frees the whole original reservation
     VirtualFree(ptr, 0, MEM_RELEASE);
+}
+
+void *os_reserve_exec(u64 size)
+{
+    return VirtualAlloc(0, (SIZE_T)size, MEM_RESERVE, PAGE_NOACCESS);
+}
+
+b32 os_commit_exec(void *ptr, u64 size)
+{
+    return VirtualAlloc(ptr, (SIZE_T)size, MEM_COMMIT, PAGE_EXECUTE_READWRITE) != 0;
+}
+
+void os_exec_write_begin(void)
+{
+    // Windows leaves PAGE_EXECUTE_READWRITE writable, so there is nothing to lift.
+}
+
+void os_exec_write_end(void *code, u64 size)
+{
+    FlushInstructionCache(GetCurrentProcess(), code, (SIZE_T)size);
 }
 
 b32 os_file_read(Arena *arena, Str8 path, Str8 *out)
@@ -324,8 +382,20 @@ b32 os_thread_join(OS_Handle handle)
 #include <time.h>
 #include <unistd.h>
 
+#if OS_MAC
+#include <libkern/OSCacheControl.h>
+#endif
+
 #if !defined(MAP_ANONYMOUS)
 #define MAP_ANONYMOUS MAP_ANON
+#endif
+
+// Apple Silicon refuses PROT_EXEC on a mapping that was not created with
+// MAP_JIT. Elsewhere the flag does not exist.
+#if OS_MAC && ARCH_ARM64
+#define OS_MAP_EXEC_ MAP_JIT
+#else
+#define OS_MAP_EXEC_ 0
 #endif
 
 u64 os_page_size(void)
@@ -363,6 +433,39 @@ void os_decommit(void *ptr, u64 size)
 void os_release(void *ptr, u64 size)
 {
     munmap(ptr, (size_t)size);
+}
+
+void *os_reserve_exec(u64 size)
+{
+    void *result =
+        mmap(0, (size_t)size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | OS_MAP_EXEC_, -1, 0);
+    if (result == MAP_FAILED)
+    {
+        return 0;
+    }
+    return result;
+}
+
+b32 os_commit_exec(void *ptr, u64 size)
+{
+    return mprotect(ptr, (size_t)size, PROT_READ | PROT_WRITE | PROT_EXEC) == 0;
+}
+
+void os_exec_write_begin(void)
+{
+#if OS_MAC && ARCH_ARM64
+    pthread_jit_write_protect_np(0);
+#endif
+}
+
+void os_exec_write_end(void *code, u64 size)
+{
+#if OS_MAC && ARCH_ARM64
+    pthread_jit_write_protect_np(1);
+    sys_icache_invalidate(code, (size_t)size);
+#else
+    __builtin___clear_cache((char *)code, (char *)code + size);
+#endif
 }
 
 b32 os_file_read(Arena *arena, Str8 path, Str8 *out)

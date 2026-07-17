@@ -1,0 +1,223 @@
+// jit.c - see jit.h.
+//
+// Codegen is a stack machine: every node leaves its value on the machine stack,
+// and a binary op pops two and pushes one. It wastes instructions that a
+// register allocator would not, but it is correct at any expression depth and
+// needs no allocation pass. Registers come later.
+//
+// Instructions are built in a scratch array and copied into executable memory
+// in one shot, because the write toggle in os_exec_write_begin is per-thread
+// and cannot be held open across a recursive walk.
+
+#include "jit.h"
+
+#if !ARCH_ARM64
+#error "jit.c: arm64 is the only backend so far"
+#endif
+
+ArrayDef(InstArray, u32);
+
+// x0 carries every value and is the return register. x1 holds the right operand
+// while a binary op executes. Register 31 reads as the zero register in the
+// data-processing encodings below and as sp in the load and store ones.
+#define REG_RESULT 0
+#define REG_RHS    1
+#define REG_ZERO   31
+
+static u32 arm64_movz_(u32 rd, u16 imm16, u32 shift)
+{
+    return 0xD2800000 | ((shift / 16) << 21) | ((u32)imm16 << 5) | rd;
+}
+
+static u32 arm64_movk_(u32 rd, u16 imm16, u32 shift)
+{
+    return 0xF2800000 | ((shift / 16) << 21) | ((u32)imm16 << 5) | rd;
+}
+
+static u32 arm64_add_(u32 rd, u32 rn, u32 rm)
+{
+    return 0x8B000000 | (rm << 16) | (rn << 5) | rd;
+}
+
+static u32 arm64_sub_(u32 rd, u32 rn, u32 rm)
+{
+    return 0xCB000000 | (rm << 16) | (rn << 5) | rd;
+}
+
+// madd rd, rn, rm, xzr
+static u32 arm64_mul_(u32 rd, u32 rn, u32 rm)
+{
+    return 0x9B007C00 | (rm << 16) | (rn << 5) | rd;
+}
+
+static u32 arm64_sdiv_(u32 rd, u32 rn, u32 rm)
+{
+    return 0x9AC00C00 | (rm << 16) | (rn << 5) | rd;
+}
+
+// str rt, [sp, #-16]! and ldr rt, [sp], #16. Sixteen rather than eight keeps sp
+// 16-byte aligned, which arm64 requires of every sp update.
+static u32 arm64_push_(u32 rt)
+{
+    return 0xF81F0FE0 | rt;
+}
+
+static u32 arm64_pop_(u32 rt)
+{
+    return 0xF84107E0 | rt;
+}
+
+static u32 arm64_ret_(void)
+{
+    return 0xD65F03C0;
+}
+
+// movz of the low half, then movk for each nonzero half above it. A negative
+// value fills all four halves, so it costs four instructions.
+static void jit_emit_imm64_(InstArray *code, u32 rd, i64 value)
+{
+    u64 bits = (u64)value;
+    ArrayPush(code, arm64_movz_(rd, (u16)(bits & 0xFFFF), 0));
+    for (u32 shift = 16; shift < 64; shift += 16)
+    {
+        u16 part = (u16)((bits >> shift) & 0xFFFF);
+        if (part != 0)
+        {
+            ArrayPush(code, arm64_movk_(rd, part, shift));
+        }
+    }
+}
+
+static void jit_emit_node_(InstArray *code, Node *node)
+{
+    switch (node->kind)
+    {
+    case NodeKind_Int:
+    {
+        jit_emit_imm64_(code, REG_RESULT, node->value);
+    }
+    break;
+
+    case NodeKind_Neg:
+    {
+        jit_emit_node_(code, node->lhs);
+        ArrayPush(code, arm64_pop_(REG_RESULT));
+        ArrayPush(code, arm64_sub_(REG_RESULT, REG_ZERO, REG_RESULT));
+    }
+    break;
+
+    case NodeKind_Add:
+    case NodeKind_Sub:
+    case NodeKind_Mul:
+    case NodeKind_Div:
+    {
+        jit_emit_node_(code, node->lhs);
+        jit_emit_node_(code, node->rhs);
+        ArrayPush(code, arm64_pop_(REG_RHS));    // rhs was pushed last
+        ArrayPush(code, arm64_pop_(REG_RESULT)); // lhs
+
+        if (node->kind == NodeKind_Add)
+        {
+            ArrayPush(code, arm64_add_(REG_RESULT, REG_RESULT, REG_RHS));
+        }
+        else if (node->kind == NodeKind_Sub)
+        {
+            ArrayPush(code, arm64_sub_(REG_RESULT, REG_RESULT, REG_RHS));
+        }
+        else if (node->kind == NodeKind_Mul)
+        {
+            ArrayPush(code, arm64_mul_(REG_RESULT, REG_RESULT, REG_RHS));
+        }
+        else
+        {
+            // arm64 sdiv yields 0 for a zero divisor and never traps.
+            ArrayPush(code, arm64_sdiv_(REG_RESULT, REG_RESULT, REG_RHS));
+        }
+    }
+    break;
+
+    default:
+    {
+        Assert(!"jit_emit_node_: unhandled NodeKind");
+    }
+    break;
+    }
+    ArrayPush(code, arm64_push_(REG_RESULT));
+}
+
+static b32 jit_install_(Jit *jit, u32 *code, u64 count, JitFunc *out)
+{
+    u64 size        = count * sizeof(u32);
+    u64 pos_aligned = AlignPow2(jit->pos, 16);
+    u64 new_pos     = pos_aligned + size;
+
+    if (new_pos > jit->reserved)
+    {
+        return 0;
+    }
+
+    if (new_pos > jit->committed)
+    {
+        u64 commit_target = AlignPow2(new_pos, JIT_COMMIT_GRANULARITY);
+        commit_target     = Min(commit_target, jit->reserved);
+        if (!os_commit_exec(jit->base + jit->committed, commit_target - jit->committed))
+        {
+            return 0;
+        }
+        jit->committed = commit_target;
+    }
+
+    u8 *dst = jit->base + pos_aligned;
+    os_exec_write_begin();
+    MemoryCopy(dst, code, size);
+    os_exec_write_end(dst, size);
+
+    jit->pos = new_pos;
+    *out     = (JitFunc)(void *)dst;
+    return 1;
+}
+
+b32 jit_init(Jit *jit, u64 reserve_size)
+{
+    MemoryZeroStruct(jit);
+
+    reserve_size = AlignPow2(reserve_size, os_page_size());
+    jit->base    = (u8 *)os_reserve_exec(reserve_size);
+    if (jit->base == 0)
+    {
+        return 0;
+    }
+    jit->reserved = reserve_size;
+    return 1;
+}
+
+void jit_shutdown(Jit *jit)
+{
+    if (jit->base != 0)
+    {
+        os_release(jit->base, jit->reserved);
+    }
+    MemoryZeroStruct(jit);
+}
+
+b32 jit_compile(Jit *jit, Arena *scratch, Node *ast, JitFunc *out)
+{
+    *out = 0;
+
+    Temp temp = temp_begin(scratch);
+
+    InstArray code;
+    ArrayInit(&code, scratch);
+    jit_emit_node_(&code, ast);
+    ArrayPush(&code, arm64_pop_(REG_RESULT)); // the whole expression's value
+    ArrayPush(&code, arm64_ret_());
+
+    b32 result = 0;
+    if (code.v != 0)
+    {
+        result = jit_install_(jit, code.v, code.count, out);
+    }
+
+    temp_end(temp);
+    return result;
+}
