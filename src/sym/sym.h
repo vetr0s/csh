@@ -3,7 +3,7 @@
 // A symbol's storage is a slot in the session arena, so its address is fixed
 // the moment it is declared. That is what lets a line compiled later reach a
 // variable declared earlier: codegen bakes the slot's address straight into the
-// instruction stream. csh owns the storage, not the compiler.
+// instruction stream. vsh owns the storage, not the compiler.
 //
 // Declaring a name that already exists makes a new slot and shadows the old
 // one. The old slot stays alive, because code compiled earlier holds its

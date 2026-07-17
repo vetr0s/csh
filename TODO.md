@@ -35,7 +35,7 @@ Nothing here exists. All of it is the point of the project.
 - [ ] `cd`, and the process-control builtins.
 - [ ] External processes: `fork`, `exec`, `pipe`, `dup2`, behind an explicit
       builtin rather than implicit in the syntax.
-- [ ] The hybrid pipe dispatcher: `|` between csh functions is a call, `|` to a
+- [ ] The hybrid pipe dispatcher: `|` between vsh functions is a call, `|` to a
       binary is a real pipe.
 - [ ] Redirection.
 - [ ] `exit(code)` and a separately named session exit. The brief is emphatic
@@ -75,4 +75,4 @@ Nothing here exists. All of it is the point of the project.
       arch detection is the likelier candidate of the two.
 - [ ] `os_decommit` uses `MADV_DONTNEED`, which does not release pages on Darwin
       the way it does on Linux. Latent, since the arena never decommits. Noticed
-      but not verified. Would be a template fix, not a csh one.
+      but not verified. Would be a template fix, not a vsh one.

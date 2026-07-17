@@ -1,16 +1,16 @@
-# csh
+# vsh
 
 An interactive, compiled, C-like shell language, loosely inspired by TempleOS's
 HolyC.
 
-csh compiles what you type and runs it. There is no interpreter and no bytecode.
+vsh compiles what you type and runs it. There is no interpreter and no bytecode.
 Typing `2 + 3 * 4` lexes it, parses it, resolves its names, emits arm64
 instructions, writes those bytes into an executable page, and calls them as a
-function. The compiler is csh's own, written from scratch. Nothing is embedded.
+function. The compiler is vsh's own, written from scratch. Nothing is embedded.
 
 ## Status
 
-Early, and not yet a shell. csh evaluates integer arithmetic with variables that
+Early, and not yet a shell. vsh evaluates integer arithmetic with variables that
 persist across lines. There are no processes, pipes, redirection, strings,
 functions, control flow, or types beyond `i64`.
 
@@ -21,7 +21,7 @@ whole picture and `TODO.md` for what is next.
 ## Build
 
 ```sh
-./scripts/build_macos.sh            # debug, -> build/csh
+./scripts/build_macos.sh            # debug, -> build/vsh
 ./scripts/build_macos.sh release    # -O2, no debug info
 
 ./scripts/build_linux.sh            # untested, see Requirements
@@ -34,14 +34,14 @@ Only `src/main.c` reaches the compiler. Everything else arrives through
 ## Use
 
 ```
-csh> 2 + 3 * 4
+vsh> 2 + 3 * 4
 14
-csh> i64 x = 5;
-csh> x * 3
+vsh> i64 x = 5;
+vsh> x * 3
 15
-csh> x = 9
+vsh> x = 9
 9
-csh> it + 1
+vsh> it + 1
 10
 ```
 
@@ -50,7 +50,7 @@ value and sets `it`.
 
 `it` holds the last expression's value. It is an ordinary entry in the symbol
 table, not magic punctuation, so it reads like any other name. The name comes
-from GHCi, which csh borrows its REPL feel from. It replaces bash's `$?`.
+from GHCi, which vsh borrows its REPL feel from. It replaces bash's `$?`.
 
 Ctrl-D exits. There is no `exit` yet, deliberately: the goal is that command
 exit and session exit are different things by construction, and that decision is
@@ -92,10 +92,10 @@ it and owns the session.
 `src/base/` is vendored from
 [c-project-template](https://github.com/vetr0s/c-project-template) at `67630fb`
 and is copied rather than depended on. It arrived in its own commit, `e8f9a7a`,
-so that `git diff e8f9a7a..HEAD -- src/base/` is exactly what csh has added to
+so that `git diff e8f9a7a..HEAD -- src/base/` is exactly what vsh has added to
 upstream. That is what a re-sync needs.
 
-csh adds two things to it: architecture detection, and an executable-memory pair
+vsh adds two things to it: architecture detection, and an executable-memory pair
 (`os_reserve_exec`, `os_commit_exec`, `os_exec_write_begin`,
 `os_exec_write_end`). Both may be worth upstreaming once they settle.
 

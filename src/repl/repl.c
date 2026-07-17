@@ -130,7 +130,7 @@ void repl_run(Repl *repl)
     char line[REPL_LINE_MAX];
     for (;;)
     {
-        printf("csh> ");
+        printf("vsh> ");
         fflush(stdout);
 
         if (fgets(line, sizeof(line), stdin) == 0)

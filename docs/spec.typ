@@ -1,4 +1,4 @@
-#set document(title: "csh Language Specification", author: "Nathan Tebbs")
+#set document(title: "vsh Language Specification", author: "Nathan Tebbs")
 #set page(paper: "us-letter", margin: (x: 1.25in, y: 1in), numbering: "1")
 #set text(font: "New Computer Modern", size: 11pt)
 #set heading(numbering: "1.1.")
@@ -25,7 +25,7 @@
 )
 
 // Status of each claim in this document. The point is that a reader can tell
-// what csh does from what csh intends, which are very different sizes today.
+// what vsh does from what vsh intends, which are very different sizes today.
 #let done = box(
   fill: rgb("#e6f4ea"), inset: (x: 5pt, y: 2pt), radius: 3pt,
   text(size: 7.5pt, weight: "bold", fill: rgb("#1e6b34"), "BUILT"),
@@ -44,7 +44,7 @@
 // ─────────────────────────────────────────────
 #align(center)[
   #v(3em)
-  #text(size: 28pt, weight: "bold")[csh]
+  #text(size: 28pt, weight: "bold")[vsh]
   #v(0.5em)
   #text(size: 14pt)[Language Specification]
   #v(0.5em)
@@ -66,7 +66,7 @@
 // ─────────────────────────────────────────────
 = About This Document
 
-This is a sketch, not a standard. csh is early enough that most of what follows
+This is a sketch, not a standard. vsh is early enough that most of what follows
 is intention rather than behaviour, and the document's main job is to keep those
 two apart. Every section carries one of three marks:
 
@@ -90,9 +90,9 @@ The worklist lives in `TODO.md`. This document explains, that one enumerates.
 // ─────────────────────────────────────────────
 = Overview
 
-== What csh Is
+== What vsh Is
 
-csh is a statically typed, imperative, compiled language with a C-like feel,
+vsh is a statically typed, imperative, compiled language with a C-like feel,
 driven from a REPL, intended to become a shell you live in rather than only
 script from.
 
@@ -115,7 +115,7 @@ Three inspirations, each contributing one thing:
 )
 
 TempleOS's HolyC is the closest existing thing: a shell whose REPL was a live C
-compiler. csh takes that pitch and applies it deliberately, with answers to the
+compiler. vsh takes that pitch and applies it deliberately, with answers to the
 things bash and raw C get wrong.
 
 == Non-Goals
@@ -131,7 +131,7 @@ The original plan embedded tinycc through `libtcc`. It is not used, for two
 independent reasons.
 
 The first is the point of the project. Writing the compiler is the work.
-Embedding libtcc would put someone else's code exactly where csh's belongs, and
+Embedding libtcc would put someone else's code exactly where vsh's belongs, and
 would turn the interesting problems, which are persistence, arena scoping, and
 compile granularity, into problems of fighting libtcc's model instead of
 designing one.
@@ -210,7 +210,7 @@ known. Division by zero forced that machinery; control flow will reuse it.
 #undecided
 
 Today one input line is one function, compiled whole. HolyC compiled each line
-as its own function too. Whether csh keeps that, or moves to explicit
+as its own function too. Whether vsh keeps that, or moves to explicit
 `{}`-delimited blocks, is unsettled and interacts with control flow and
 functions. It is deliberately not being answered before those exist.
 
@@ -235,7 +235,7 @@ Both are arenas from the base layer: they reserve a gigabyte of address space
 and commit pages only as the bump pointer reaches them. Reserving costs nothing
 until touched.
 
-There is no `malloc` in csh, no `free`, and no per-allocation lifetime. Raw
+There is no `malloc` in vsh, no `free`, and no per-allocation lifetime. Raw
 manual allocation is unworkable in a REPL, where a variable declared on line 1
 and read on line 50 makes "did I free this?" impossible to answer by hand. A
 garbage collector would betray the no-hidden-runtime goal. Arena scoping is the
@@ -246,7 +246,7 @@ middle ground, and it is what the base layer already provides.
 This is the problem the project is really about, so it is worth stating plainly.
 
 A normal one-shot compile throws away all state when the process exits. A shell
-cannot. The answer is that *csh owns the storage, not the compiler.*
+cannot. The answer is that *vsh owns the storage, not the compiler.*
 
 `sym.c` gives every variable a slot in the session arena. Because that arena is
 never popped, the slot's address is fixed the moment the name is declared.
@@ -310,7 +310,7 @@ the parse unwinds without reporting, so a reader sees the cause rather than its
 consequences.
 
 Trailing input is an error. Without that rule `1 2` would quietly evaluate to 1,
-which is the class of silent wrongness csh exists to avoid.
+which is the class of silent wrongness vsh exists to avoid.
 
 // ─────────────────────────────────────────────
 = Types
@@ -407,7 +407,7 @@ and shadowed entries stay in the table because code still points at their slots.
 
 The original plan called this `$?`, kept from bash. The requirement was that it
 be a real typed variable rather than bash's stringly-typed magic. GHCi, which
-csh already borrows its REPL feel from, calls this `it`, and taking that name
+vsh already borrows its REPL feel from, calls this `it`, and taking that name
 satisfies the requirement better than keeping `$?` would: `it` is an ordinary
 entry in the symbol table, so no special case reaches the lexer, the parser, or
 codegen. Only the REPL's assignment to it is special.
@@ -419,7 +419,7 @@ shadows it with a new slot and the prompt should write the binding the next line
 will read.
 
 Bash's other magic is answered the same way. `$1` and `$2` become ordinary typed
-function parameters, once functions exist, because a command in csh is just a
+function parameters, once functions exist, because a command in vsh is just a
 function.
 
 // ─────────────────────────────────────────────
@@ -440,7 +440,7 @@ symbol table and every prior value survive it.
 
 #planned
 
-The one thing csh must not do is confidently answer a different question than
+The one thing vsh must not do is confidently answer a different question than
 the one asked. This is the failure bash normalises, with its ignored exit codes
 and its unquoted expansions.
 
@@ -460,14 +460,14 @@ Three cases exist so far and were treated as bugs, not curiosities:
 `5 / 0` reports an error and the session lives.
 
 ```
-csh> 5 / 0
+vsh> 5 / 0
 error: division by zero
-csh> 42
+vsh> 42
 42
 ```
 
 arm64 `sdiv` yields zero for a zero divisor and never traps, so without a check
-this was a confident wrong answer, which is the one thing csh must not do.
+this was a confident wrong answer, which is the one thing vsh must not do.
 
 Three answers were possible. Trapping was rejected: it is loud and cheap, but a
 shell must not die because you typed `5 / 0`. Returning a tagged value is the
@@ -502,7 +502,7 @@ already pushed, and balancing that would need a prologue that nothing else here
 wants. Carrying on with a zero costs nothing, because the caller throws the
 value away.
 
-This is the first thing in csh that needed branches, so the backend grew `cbz`,
+This is the first thing in vsh that needed branches, so the backend grew `cbz`,
 `b`, and the patching that fills a branch's offset in once its target is known.
 Control flow needs all of that anyway.
 
@@ -565,8 +565,8 @@ Nothing here is built. Ctrl-D ends the session today, and that is all.
   columns: (auto, 1fr),
   stroke: 0.5pt + rgb("#cccccc"),
   inset: 7pt,
-  [*csh to csh*], [An in-process function call. Typed, fast, no serialisation, no `fork`, no `exec`.],
-  [*csh to a binary*], [A real pipe, through an explicit builtin such as `sh("grep foo")`, doing `fork`, `exec`, `pipe(2)`, and `dup2` underneath.],
+  [*vsh to vsh*], [An in-process function call. Typed, fast, no serialisation, no `fork`, no `exec`.],
+  [*vsh to a binary*], [A real pipe, through an explicit builtin such as `sh("grep foo")`, doing `fork`, `exec`, `pipe(2)`, and `dup2` underneath.],
 )
 
 The split keeps the fast typed path fast without losing the ability to call any
@@ -574,14 +574,14 @@ Unix tool. A pure in-process design would lose the second; a pure process design
 would lose the first.
 
 Routing to a binary is explicit rather than inferred. Guessing which one the
-user meant is the kind of magic csh is trying not to have.
+user meant is the kind of magic vsh is trying not to have.
 
 == Environment
 
 #planned
 
 Environment variables have to exist, because child processes expect them. Inside
-csh they should be a typed table, with an explicit builtin to export a value out
+vsh they should be a typed table, with an explicit builtin to export a value out
 to a child, rather than bash's untyped ambiently-inherited string soup.
 
 // ─────────────────────────────────────────────
@@ -595,7 +595,7 @@ Where to look. Data flows top to bottom.
   columns: (auto, 1fr),
   stroke: 0.5pt + rgb("#cccccc"),
   inset: 7pt,
-  [`src/base/`], [Vendored from c-project-template at `67630fb`. Arenas, strings, arrays, logging, and the platform layer. csh adds architecture detection and the executable-memory pair.],
+  [`src/base/`], [Vendored from c-project-template at `67630fb`. Arenas, strings, arrays, logging, and the platform layer. vsh adds architecture detection and the executable-memory pair.],
   [`src/lex/`], [Bytes to tokens. Allocates nothing; tokens borrow the source.],
   [`src/parse/`], [Tokens to a tree, on a caller's arena. Recursive descent.],
   [`src/sym/`], [The session symbol table. Owns names and slots. Hands out slot pointers only.],

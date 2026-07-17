@@ -33,4 +33,4 @@ esac
 mkdir -p "$build_dir"
 
 set -x
-$CC $flags "$root_dir/src/main.c" -o "$build_dir/csh"
+$CC $flags "$root_dir/src/main.c" -o "$build_dir/vsh"

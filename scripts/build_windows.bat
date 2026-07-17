@@ -40,7 +40,7 @@ if /i "%mode%"=="debug" (
 )
 echo clang-cl %flags% "%src%"
 clang-cl /nologo /std:c11 /D_CRT_SECURE_NO_WARNINGS %flags% "%src%" ^
-    /Fe:"%build_dir%\csh.exe" /Fo:"%build_dir%\\" /Fd:"%build_dir%\\"
+    /Fe:"%build_dir%\vsh.exe" /Fo:"%build_dir%\\" /Fd:"%build_dir%\\"
 exit /b %errorlevel%
 
 rem ------------------------------------------------------------------- clang
@@ -51,7 +51,7 @@ if /i "%mode%"=="debug" (
     set "flags=-O2 -DBUILD_DEBUG=0 -DNDEBUG"
 )
 echo clang %flags% "%src%"
-clang -std=gnu11 -Wall -Wextra %flags% "%src%" -o "%build_dir%\csh.exe"
+clang -std=gnu11 -Wall -Wextra %flags% "%src%" -o "%build_dir%\vsh.exe"
 exit /b %errorlevel%
 
 rem ------------------------------------------------------------------ cl.exe
@@ -64,5 +64,5 @@ if /i "%mode%"=="debug" (
 echo cl %flags% "%src%"
 rem /std:c11 needs MSVC 2019 16.8 or newer.
 cl /nologo /std:c11 /D_CRT_SECURE_NO_WARNINGS %flags% "%src%" ^
-    /Fe:"%build_dir%\csh.exe" /Fo:"%build_dir%\\" /Fd:"%build_dir%\\"
+    /Fe:"%build_dir%\vsh.exe" /Fo:"%build_dir%\\" /Fd:"%build_dir%\\"
 exit /b %errorlevel%

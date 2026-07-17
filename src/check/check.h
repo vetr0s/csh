@@ -1,7 +1,7 @@
 // check.h - name resolution, between parse and codegen.
 //
 // Fills in each node's slot so codegen never has to ask what a name means. When
-// csh grows a second type, this is where the type checker goes.
+// vsh grows a second type, this is where the type checker goes.
 
 #ifndef CHECK_H
 #define CHECK_H
