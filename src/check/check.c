@@ -29,6 +29,25 @@ static void check_node_(Checker *checker, Node *node)
 
     switch (node->kind)
     {
+    // Iterating rather than recursing, so a file of ten thousand statements
+    // costs one stack frame instead of ten thousand.
+    case NodeKind_Block:
+    {
+        for (Node *stmt = node->lhs; stmt != 0; stmt = stmt->next)
+        {
+            check_node_(checker, stmt);
+            if (checker->failed)
+            {
+                return;
+            }
+        }
+        if (node->rhs != 0)
+        {
+            check_node_(checker, node->rhs);
+        }
+    }
+    break;
+
     case NodeKind_Int:
         break;
 

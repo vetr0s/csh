@@ -296,7 +296,8 @@ a bad byte cannot loop the parser.
 #done
 
 ```
-line    := decl | expr
+line    := stmt* expr?
+stmt    := decl | expr ';' | ';'
 decl    := 'i64' NAME '=' expr ';'
 expr    := NAME '=' expr | addsub
 addsub  := term (('+' | '-') term)*
@@ -311,6 +312,41 @@ consequences.
 
 Trailing input is an error. Without that rule `1 2` would quietly evaluate to 1,
 which is the class of silent wrongness vsh exists to avoid.
+
+== What The Semicolon Is For
+
+#done
+
+A line is any number of statements, optionally ending in an expression with *no*
+semicolon. That trailing expression is the line's value and the only thing the
+prompt prints.
+
+```
+vsh> i64 x = 100; i64 y = 100; i64 xy = x * y;
+vsh> xy
+10000
+vsh> i64 a = 5; a * 2
+10
+vsh> 2 + 3 * 4
+14
+vsh> 2 + 3 * 4;
+vsh>
+```
+
+So the semicolon means "discard this value", which is exactly what it already
+means in C, where `foo();` throws away what `foo` returned. Until statements
+could be sequenced, the semicolon only terminated a declaration and carried no
+weight, which made it decoration. Now it earns its place.
+
+This rule is also what makes files work. A file is a sequence of statements, all
+terminated, so loading one runs it and prints nothing. A prompt is the same
+grammar with a trailing expression on the end.
+
+An empty statement is allowed, as in C, so a stray `;;` costs nothing.
+
+Statements chain through a `next` pointer rather than nesting, and both the
+checker and codegen walk that chain with a loop. A file of ten thousand
+statements therefore costs one stack frame rather than ten thousand.
 
 // ─────────────────────────────────────────────
 = Types
@@ -336,7 +372,7 @@ things C gets wrong and is worth not repeating by reflex.
 i64 x = 5;
 ```
 
-A declaration is a *statement*. It prints nothing and does not move `it`.
+A declaration is a *statement*, so it prints nothing and does not move `it`.
 
 The initialiser is resolved before the name is declared. That makes
 `i64 x = x + 1;` read the old `x`, and makes `i64 y = y;` an error rather than a

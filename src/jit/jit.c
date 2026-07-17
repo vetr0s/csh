@@ -160,8 +160,33 @@ static void jit_emit_div_(Emitter *em, u32 rd, u32 rn, u32 rm)
     jit_patch_b_(&em->code, to_done, em->code.count);
 }
 
+// Every node below leaves exactly one value on the machine stack. A block is
+// handled here rather than in the switch because it reaches that state its own
+// way, through its trailing expression, and so must skip the common tail push.
 static void jit_emit_node_(Emitter *em, Node *node)
 {
+    if (node->kind == NodeKind_Block)
+    {
+        for (Node *stmt = node->lhs; stmt != 0; stmt = stmt->next)
+        {
+            jit_emit_node_(em, stmt);
+            ArrayPush(&em->code, arm64_pop_(REG_RESULT)); // a statement's value is dropped
+        }
+
+        if (node->rhs != 0)
+        {
+            jit_emit_node_(em, node->rhs);
+        }
+        else
+        {
+            // A block with no trailing expression still has to leave something,
+            // because the caller pops one value. Nothing reads it.
+            jit_emit_imm64_(&em->code, REG_RESULT, 0);
+            ArrayPush(&em->code, arm64_push_(REG_RESULT));
+        }
+        return;
+    }
+
     switch (node->kind)
     {
     case NodeKind_Int:

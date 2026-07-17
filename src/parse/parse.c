@@ -258,8 +258,56 @@ b32 parse_line(Arena *arena, Str8 src, Node **out_ast, Str8 *out_err)
     lex_init(&parser.lexer, src);
     parser_advance_(&parser);
 
-    Node *ast =
-        (parser.token.kind == TokenKind_KeywordI64) ? parser_decl_(&parser) : parser_expr_(&parser);
+    Node *block = parser_node_(&parser, NodeKind_Block);
+    Node *last  = 0;
+
+    while (!parser.failed && parser.token.kind != TokenKind_EOF)
+    {
+        if (parser.token.kind == TokenKind_Semi)
+        {
+            parser_advance_(&parser); // an empty statement, as in C
+            continue;
+        }
+
+        Node *stmt = 0;
+        if (parser.token.kind == TokenKind_KeywordI64)
+        {
+            stmt = parser_decl_(&parser); // eats its own ';'
+        }
+        else
+        {
+            Node *value = parser_expr_(&parser);
+            if (parser.failed)
+            {
+                break;
+            }
+
+            // No semicolon means this is the line's value, so it has to be
+            // last. Anything after it is caught by the EOF check below.
+            if (parser.token.kind != TokenKind_Semi)
+            {
+                block->rhs = value;
+                break;
+            }
+            parser_advance_(&parser);
+            stmt = value;
+        }
+
+        if (parser.failed)
+        {
+            break;
+        }
+
+        if (last == 0)
+        {
+            block->lhs = stmt;
+        }
+        else
+        {
+            last->next = stmt;
+        }
+        last = stmt;
+    }
 
     // Trailing junk is an error, otherwise `1 2` would quietly evaluate to 1.
     if (!parser.failed && parser.token.kind != TokenKind_EOF)
@@ -273,6 +321,6 @@ b32 parse_line(Arena *arena, Str8 src, Node **out_ast, Str8 *out_err)
         return 0;
     }
 
-    *out_ast = ast;
+    *out_ast = block;
     return 1;
 }

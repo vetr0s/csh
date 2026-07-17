@@ -107,8 +107,9 @@ static void repl_eval_(Repl *repl, Str8 line)
         return;
     }
 
-    // A declaration is a statement: it neither prints nor moves `it`.
-    if (ast->kind != NodeKind_Decl)
+    // Only a trailing expression with no semicolon has a value worth showing.
+    // A line of statements, and so a whole loaded file, prints nothing.
+    if (NodeBlockHasValue(ast))
     {
         // Looked up rather than cached, because redeclaring `it` makes a new
         // slot and the prompt should write the one the next line will read.

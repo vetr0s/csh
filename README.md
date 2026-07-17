@@ -43,10 +43,15 @@ vsh> x = 9
 9
 vsh> it + 1
 10
+vsh> i64 a = 100; i64 b = 100; i64 ab = a * b;
+vsh> ab
+10000
 ```
 
-A declaration is a statement, so it prints nothing. An expression prints its
-value and sets `it`.
+A line is any number of statements, optionally ending in an expression with no
+semicolon. That trailing expression is the line's value and the only thing
+printed, so the semicolon means "discard this", as `foo();` does in C. `2 + 3`
+prints 5 and `2 + 3;` prints nothing.
 
 `it` holds the last expression's value. It is an ordinary entry in the symbol
 table, not magic punctuation, so it reads like any other name. The name comes
