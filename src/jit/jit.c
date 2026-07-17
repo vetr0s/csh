@@ -72,6 +72,17 @@ static u32 arm64_ret_(void)
     return 0xD65F03C0;
 }
 
+// ldr rt, [rn] and str rt, [rn], both at a zero offset.
+static u32 arm64_ldr_(u32 rt, u32 rn)
+{
+    return 0xF9400000 | (rn << 5) | rt;
+}
+
+static u32 arm64_str_(u32 rt, u32 rn)
+{
+    return 0xF9000000 | (rn << 5) | rt;
+}
+
 // movz of the low half, then movk for each nonzero half above it. A negative
 // value fills all four halves, so it costs four instructions.
 static void jit_emit_imm64_(InstArray *code, u32 rd, i64 value)
@@ -95,6 +106,25 @@ static void jit_emit_node_(InstArray *code, Node *node)
     case NodeKind_Int:
     {
         jit_emit_imm64_(code, REG_RESULT, node->value);
+    }
+    break;
+
+    // A slot's address is a compile-time constant, because sym.c fixed it when
+    // the name was declared. Baking it in is what lets code compiled now reach
+    // a variable declared on an earlier line.
+    case NodeKind_Var:
+    {
+        jit_emit_imm64_(code, REG_RESULT, (i64)(u64)(uintptr_t)node->slot);
+        ArrayPush(code, arm64_ldr_(REG_RESULT, REG_RESULT));
+    }
+    break;
+
+    case NodeKind_Decl:
+    {
+        jit_emit_node_(code, node->lhs);
+        ArrayPush(code, arm64_pop_(REG_RESULT));
+        jit_emit_imm64_(code, REG_RHS, (i64)(u64)(uintptr_t)node->slot);
+        ArrayPush(code, arm64_str_(REG_RESULT, REG_RHS));
     }
     break;
 

@@ -12,5 +12,7 @@
 
 #include "lex/lex.c"
 #include "parse/parse.c"
+#include "sym/sym.c"
+#include "check/check.c"
 #include "jit/jit.c"
 #include "repl/repl.c"

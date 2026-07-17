@@ -66,6 +66,18 @@ static Node *parser_primary_(Parser *parser)
         return node;
     }
 
+    if (parser->token.kind == TokenKind_Ident)
+    {
+        Node *node = parser_node_(parser, NodeKind_Var);
+        if (node == 0)
+        {
+            return 0;
+        }
+        node->name = parser->token.text;
+        parser_advance_(parser);
+        return node;
+    }
+
     if (parser->token.kind == TokenKind_LParen)
     {
         parser_advance_(parser);
@@ -158,7 +170,50 @@ static Node *parser_expr_(Parser *parser)
     return lhs;
 }
 
-b32 parse_expr(Arena *arena, Str8 src, Node **out_ast, Str8 *out_err)
+// decl := 'i64' IDENT '=' expr ';'
+static Node *parser_decl_(Parser *parser)
+{
+    parser_advance_(parser); // 'i64'
+
+    if (parser->token.kind != TokenKind_Ident)
+    {
+        parser_fail_expected_(parser, Str8Lit("a name"));
+        return 0;
+    }
+    Str8 name = parser->token.text;
+    parser_advance_(parser);
+
+    if (parser->token.kind != TokenKind_Assign)
+    {
+        parser_fail_expected_(parser, Str8Lit("'='"));
+        return 0;
+    }
+    parser_advance_(parser);
+
+    Node *init = parser_expr_(parser);
+    if (parser->failed)
+    {
+        return 0;
+    }
+
+    if (parser->token.kind != TokenKind_Semi)
+    {
+        parser_fail_expected_(parser, Str8Lit("';'"));
+        return 0;
+    }
+    parser_advance_(parser);
+
+    Node *node = parser_node_(parser, NodeKind_Decl);
+    if (node == 0)
+    {
+        return 0;
+    }
+    node->name = name;
+    node->lhs  = init;
+    return node;
+}
+
+b32 parse_line(Arena *arena, Str8 src, Node **out_ast, Str8 *out_err)
 {
     *out_ast = 0;
     *out_err = Str8Lit("");
@@ -168,7 +223,8 @@ b32 parse_expr(Arena *arena, Str8 src, Node **out_ast, Str8 *out_err)
     lex_init(&parser.lexer, src);
     parser_advance_(&parser);
 
-    Node *ast = parser_expr_(&parser);
+    Node *ast =
+        (parser.token.kind == TokenKind_KeywordI64) ? parser_decl_(&parser) : parser_expr_(&parser);
 
     // Trailing junk is an error, otherwise `1 2` would quietly evaluate to 1.
     if (!parser.failed && parser.token.kind != TokenKind_EOF)

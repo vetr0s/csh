@@ -13,10 +13,14 @@ enum TokenKind
 {
     TokenKind_EOF,
     TokenKind_Int,
+    TokenKind_Ident,
+    TokenKind_KeywordI64,
     TokenKind_Plus,
     TokenKind_Minus,
     TokenKind_Star,
     TokenKind_Slash,
+    TokenKind_Assign,
+    TokenKind_Semi,
     TokenKind_LParen,
     TokenKind_RParen,
     TokenKind_Error,    // a byte that starts no token
@@ -29,6 +33,7 @@ struct Token
 {
     TokenKind kind;
     i64 value;  // TokenKind_Int only
+    Str8 text;  // TokenKind_Ident only; borrows the source
     u64 offset; // byte offset into the source, for error reporting
 };
 
