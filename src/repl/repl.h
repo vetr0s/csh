@@ -26,7 +26,14 @@ struct Repl
 };
 
 b32 repl_init(Repl *repl);
+
+// Reads from stdin until it ends. A failing line never ends the session.
 void repl_run(Repl *repl);
+
+// Compiles and runs `path` as a single unit. Returns 0 if the file could not be
+// read, or if what it held failed.
+b32 repl_run_file(Repl *repl, Str8 path);
+
 void repl_shutdown(Repl *repl);
 
 #endif // REPL_H

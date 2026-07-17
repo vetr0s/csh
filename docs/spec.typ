@@ -284,11 +284,19 @@ the line buffer, and the next prompt overwrites it.
   [*Operators*], [`+` `-` `*` `/` `=`],
   [*Punctuation*], [`;` `(` `)`],
   [*Whitespace*], [Space, tab, carriage return, newline. Separates tokens, otherwise ignored.],
+  [*Comments*], [`//` to end of line, and `/* */`, which does not nest. A `/*` that never closes is a diagnostic rather than a silent run to end of file.],
 )
 
-There are no comments yet. There are no string or character literals. A byte
-that begins no token is a diagnostic, and the lexer always advances past it, so
-a bad byte cannot loop the parser.
+Whitespace and comments are skipped together, because both are only gaps between
+tokens. A lone `/` is division, so the two-character lookahead is what tells
+`10 / 2` from `10 // 2`.
+
+Newlines are whitespace and nothing more. The grammar spans them, which is why a
+file needs no separate parser.
+
+There are no string or character literals. A byte that begins no token is a
+diagnostic, and the lexer always advances past it, so a bad byte cannot loop the
+parser.
 
 // ─────────────────────────────────────────────
 = Grammar
@@ -619,6 +627,36 @@ user meant is the kind of magic vsh is trying not to have.
 Environment variables have to exist, because child processes expect them. Inside
 vsh they should be a typed table, with an explicit builtin to export a value out
 to a child, rather than bash's untyped ambiently-inherited string soup.
+
+// ─────────────────────────────────────────────
+= Files
+
+#done
+
+```sh
+vsh script.vsh    # runs it, prints nothing, exits 0
+vsh               # the prompt
+```
+
+A file is compiled and run as *one unit*, not a line at a time. Nothing about
+the language had to change to allow it. Newlines were already only whitespace,
+the grammar already spanned them, and the semicolon rule already meant a
+sequence of statements produces no output. A file is simply the prompt's grammar
+without the trailing expression.
+
+The whole file is read onto the scratch arena with `os_file_read` and handed to
+the same evaluator a line goes to. Ten thousand statements compile and run in
+about twelve milliseconds, and cost one stack frame, because statements chain
+and both walkers loop.
+
+A file gets an exit status, because something other than a person is reading it:
+0 when it ran, 1 when it could not be read or something in it failed, 2 for
+misuse. The prompt has no such thing, and no single line can end it.
+
+#undecided A file is one compilation unit, so an error anywhere means none of it
+runs. That is the right default for a script. It is not obviously right for a
+`load` at an interactive prompt, where running the good half might be wanted.
+That question can wait for `load`, which needs strings first.
 
 // ─────────────────────────────────────────────
 = Implementation Map

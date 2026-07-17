@@ -63,18 +63,19 @@ static b32 repl_line_is_blank_(Str8 line)
     return 1;
 }
 
-// A failure here prints and returns. The session outlives every bad line.
-static void repl_eval_(Repl *repl, Str8 line)
+// A failure prints and returns 0. The prompt ignores that and takes the next
+// line; a file stops and makes it the exit status.
+static b32 repl_eval_(Repl *repl, Str8 source)
 {
     Temp scratch = temp_begin(repl->scratch);
 
     Node *ast = 0;
     Str8 err  = {0};
-    if (!parse_line(repl->scratch, line, &ast, &err))
+    if (!parse_line(repl->scratch, source, &ast, &err))
     {
         printf("error: %.*s\n", Str8VArg(err));
         temp_end(scratch);
-        return;
+        return 0;
     }
 
     // Declares into the session arena, so the slot outlives this scope even
@@ -83,7 +84,7 @@ static void repl_eval_(Repl *repl, Str8 line)
     {
         printf("error: %.*s\n", Str8VArg(err));
         temp_end(scratch);
-        return;
+        return 0;
     }
 
     JitFunc func = 0;
@@ -91,7 +92,7 @@ static void repl_eval_(Repl *repl, Str8 line)
     {
         printf("error: out of code space\n");
         temp_end(scratch);
-        return;
+        return 0;
     }
 
     *repl->trap = TrapKind_None;
@@ -104,7 +105,7 @@ static void repl_eval_(Repl *repl, Str8 line)
     {
         printf("error: %s\n", jit_trap_message((TrapKind)*repl->trap));
         temp_end(scratch);
-        return;
+        return 0;
     }
 
     // Only a trailing expression with no semicolon has a value worth showing.
@@ -120,6 +121,30 @@ static void repl_eval_(Repl *repl, Str8 line)
     }
 
     temp_end(scratch);
+    return 1;
+}
+
+// The file is one unit, not a line at a time, because newlines are only
+// whitespace and the grammar already spans them. A file is the same statement
+// sequence a prompt takes, minus the trailing expression, so it prints nothing.
+b32 repl_run_file(Repl *repl, Str8 path)
+{
+    Temp scratch = temp_begin(repl->scratch);
+
+    Str8 source = {0};
+    if (!os_file_read(repl->scratch, path, &source))
+    {
+        LogError("cannot read %.*s", Str8VArg(path));
+        temp_end(scratch);
+        return 0;
+    }
+
+    // Pushed before repl_eval_ opens its own scope on the same arena, so it
+    // survives that scope closing and is released by the temp_end below.
+    b32 result = repl_eval_(repl, source);
+
+    temp_end(scratch);
+    return result;
 }
 
 void repl_run(Repl *repl)

@@ -72,15 +72,68 @@ static Token lex_int_(Lexer *lex)
     return token;
 }
 
+// Whitespace and comments are both just gaps between tokens, so they are
+// skipped together. Returns 0 for a /* that never closed, which is the only way
+// trivia can fail. A lone '/' is division and ends the skip.
+static b32 lex_skip_trivia_(Lexer *lex)
+{
+    for (;;)
+    {
+        while (lex->pos < lex->src.size && lex_is_space_(lex->src.str[lex->pos]))
+        {
+            lex->pos += 1;
+        }
+
+        if (lex->pos + 1 >= lex->src.size || lex->src.str[lex->pos] != '/')
+        {
+            return 1;
+        }
+
+        u8 next = lex->src.str[lex->pos + 1];
+        if (next == '/')
+        {
+            while (lex->pos < lex->src.size && lex->src.str[lex->pos] != '\n')
+            {
+                lex->pos += 1;
+            }
+        }
+        else if (next == '*')
+        {
+            lex->pos += 2;
+            for (;;)
+            {
+                if (lex->pos + 1 >= lex->src.size)
+                {
+                    lex->pos = lex->src.size;
+                    return 0;
+                }
+                if (lex->src.str[lex->pos] == '*' && lex->src.str[lex->pos + 1] == '/')
+                {
+                    lex->pos += 2;
+                    break;
+                }
+                lex->pos += 1;
+            }
+        }
+        else
+        {
+            return 1;
+        }
+    }
+}
+
 Token lex_next(Lexer *lex)
 {
-    while (lex->pos < lex->src.size && lex_is_space_(lex->src.str[lex->pos]))
-    {
-        lex->pos += 1;
-    }
+    b32 trivia_ok = lex_skip_trivia_(lex);
 
     Token token  = {0};
     token.offset = lex->pos;
+
+    if (!trivia_ok)
+    {
+        token.kind = TokenKind_Unfinished;
+        return token;
+    }
 
     if (lex->pos >= lex->src.size)
     {
@@ -149,6 +202,7 @@ static char *lex_kind_names_[] = {
     "')'",
     "a bad character",
     "an integer too large for i64",
+    "a /* comment with no */",
 };
 StaticAssert(ArrayCount(lex_kind_names_) == TokenKind_COUNT, lex_kind_names_complete);
 

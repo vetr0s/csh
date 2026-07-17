@@ -23,8 +23,9 @@ enum TokenKind
     TokenKind_Semi,
     TokenKind_LParen,
     TokenKind_RParen,
-    TokenKind_Error,    // a byte that starts no token
-    TokenKind_Overflow, // digits that do not fit an i64
+    TokenKind_Error,      // a byte that starts no token
+    TokenKind_Overflow,   // digits that do not fit an i64
+    TokenKind_Unfinished, // a /* comment that never closed
     TokenKind_COUNT
 };
 

@@ -26,7 +26,11 @@ is the worklist.
 - [ ] Functions. Needs a calling convention, a prologue and epilogue, and a
       decision about whether a function's locals live on the machine stack or in
       an arena.
-- [ ] Comments in the lexer.
+- [ ] `load("file")` at the prompt, which needs strings. Open question then: a
+      file is one compilation unit, so an error anywhere means none of it runs.
+      Right for a script, maybe wrong for an interactive load.
+- [ ] Script arguments. `$1` and `$2` become ordinary typed parameters once
+      functions exist, so `vsh script.vsh a b` waits on both.
 
 ## Shell
 

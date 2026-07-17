@@ -53,6 +53,19 @@ semicolon. That trailing expression is the line's value and the only thing
 printed, so the semicolon means "discard this", as `foo();` does in C. `2 + 3`
 prints 5 and `2 + 3;` prints nothing.
 
+Comments are `//` to end of line and `/* */`.
+
+## Files
+
+```sh
+./build/vsh script.vsh
+```
+
+A file is compiled and run as one unit. Because it is a sequence of terminated
+statements, it prints nothing, and because newlines are only whitespace, it is
+the same grammar the prompt uses. Exit status is 0 when it ran, 1 when it could
+not be read or something in it failed, 2 for misuse.
+
 `it` holds the last expression's value. It is an ordinary entry in the symbol
 table, not magic punctuation, so it reads like any other name. The name comes
 from GHCi, which vsh borrows its REPL feel from. It replaces bash's `$?`.
