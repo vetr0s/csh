@@ -18,11 +18,21 @@
 ArrayDef(InstArray, u32);
 
 // x0 carries every value and is the return register. x1 holds the right operand
-// while a binary op executes. Register 31 reads as the zero register in the
-// data-processing encodings below and as sp in the load and store ones.
+// while a binary op executes. x2 and x3 are scratch for reporting a trap.
+// Register 31 reads as the zero register in the data-processing encodings below
+// and as sp in the load and store ones.
 #define REG_RESULT 0
 #define REG_RHS    1
+#define REG_TMP0   2
+#define REG_TMP1   3
 #define REG_ZERO   31
+
+typedef struct Emitter Emitter;
+struct Emitter
+{
+    InstArray code;
+    i64 *trap; // baked into the code as a constant address
+};
 
 static u32 arm64_movz_(u32 rd, u16 imm16, u32 shift)
 {
@@ -83,6 +93,35 @@ static u32 arm64_str_(u32 rt, u32 rn)
     return 0xF9000000 | (rn << 5) | rt;
 }
 
+// Both branch encodings count in instructions from the branch itself, not in
+// bytes, and both are emitted with a zero offset and patched once the target is
+// known. cbz reaches 19 bits of signed instructions, b reaches 26.
+static u32 arm64_cbz_(u32 rt)
+{
+    return 0xB4000000 | rt;
+}
+
+static u32 arm64_b_(void)
+{
+    return 0x14000000;
+}
+
+static void jit_patch_cbz_(InstArray *code, u64 at, u64 target)
+{
+    i64 delta = (i64)target - (i64)at;
+    Assert(delta >= -(1 << 18) && delta < (1 << 18));
+    u32 imm19   = (u32)((u64)delta & 0x7FFFF);
+    code->v[at] = (code->v[at] & ~(0x7FFFFu << 5)) | (imm19 << 5);
+}
+
+static void jit_patch_b_(InstArray *code, u64 at, u64 target)
+{
+    i64 delta = (i64)target - (i64)at;
+    Assert(delta >= -(1 << 25) && delta < (1 << 25));
+    u32 imm26   = (u32)((u64)delta & 0x3FFFFFF);
+    code->v[at] = (code->v[at] & ~0x3FFFFFFu) | imm26;
+}
+
 // movz of the low half, then movk for each nonzero half above it. A negative
 // value fills all four halves, so it costs four instructions.
 static void jit_emit_imm64_(InstArray *code, u32 rd, i64 value)
@@ -99,13 +138,35 @@ static void jit_emit_imm64_(InstArray *code, u32 rd, i64 value)
     }
 }
 
-static void jit_emit_node_(InstArray *code, Node *node)
+// sdiv yields 0 for a zero divisor and never traps, so the check is explicit.
+// The trap path leaves a zero in `rd` and falls through rather than returning.
+// Returning from here would strand whatever operands the surrounding expression
+// had already pushed, and the caller discards the value anyway.
+static void jit_emit_div_(Emitter *em, u32 rd, u32 rn, u32 rm)
+{
+    u64 to_fail = em->code.count;
+    ArrayPush(&em->code, arm64_cbz_(rm));
+
+    ArrayPush(&em->code, arm64_sdiv_(rd, rn, rm));
+    u64 to_done = em->code.count;
+    ArrayPush(&em->code, arm64_b_());
+
+    jit_patch_cbz_(&em->code, to_fail, em->code.count);
+    jit_emit_imm64_(&em->code, REG_TMP0, TrapKind_DivideByZero);
+    jit_emit_imm64_(&em->code, REG_TMP1, (i64)(u64)(uintptr_t)em->trap);
+    ArrayPush(&em->code, arm64_str_(REG_TMP0, REG_TMP1));
+    jit_emit_imm64_(&em->code, rd, 0);
+
+    jit_patch_b_(&em->code, to_done, em->code.count);
+}
+
+static void jit_emit_node_(Emitter *em, Node *node)
 {
     switch (node->kind)
     {
     case NodeKind_Int:
     {
-        jit_emit_imm64_(code, REG_RESULT, node->value);
+        jit_emit_imm64_(&em->code, REG_RESULT, node->value);
     }
     break;
 
@@ -114,8 +175,8 @@ static void jit_emit_node_(InstArray *code, Node *node)
     // a variable declared on an earlier line.
     case NodeKind_Var:
     {
-        jit_emit_imm64_(code, REG_RESULT, (i64)(u64)(uintptr_t)node->slot);
-        ArrayPush(code, arm64_ldr_(REG_RESULT, REG_RESULT));
+        jit_emit_imm64_(&em->code, REG_RESULT, (i64)(u64)(uintptr_t)node->slot);
+        ArrayPush(&em->code, arm64_ldr_(REG_RESULT, REG_RESULT));
     }
     break;
 
@@ -124,18 +185,18 @@ static void jit_emit_node_(InstArray *code, Node *node)
     case NodeKind_Decl:
     case NodeKind_Assign:
     {
-        jit_emit_node_(code, node->lhs);
-        ArrayPush(code, arm64_pop_(REG_RESULT));
-        jit_emit_imm64_(code, REG_RHS, (i64)(u64)(uintptr_t)node->slot);
-        ArrayPush(code, arm64_str_(REG_RESULT, REG_RHS));
+        jit_emit_node_(em, node->lhs);
+        ArrayPush(&em->code, arm64_pop_(REG_RESULT));
+        jit_emit_imm64_(&em->code, REG_RHS, (i64)(u64)(uintptr_t)node->slot);
+        ArrayPush(&em->code, arm64_str_(REG_RESULT, REG_RHS));
     }
     break;
 
     case NodeKind_Neg:
     {
-        jit_emit_node_(code, node->lhs);
-        ArrayPush(code, arm64_pop_(REG_RESULT));
-        ArrayPush(code, arm64_sub_(REG_RESULT, REG_ZERO, REG_RESULT));
+        jit_emit_node_(em, node->lhs);
+        ArrayPush(&em->code, arm64_pop_(REG_RESULT));
+        ArrayPush(&em->code, arm64_sub_(REG_RESULT, REG_ZERO, REG_RESULT));
     }
     break;
 
@@ -144,27 +205,26 @@ static void jit_emit_node_(InstArray *code, Node *node)
     case NodeKind_Mul:
     case NodeKind_Div:
     {
-        jit_emit_node_(code, node->lhs);
-        jit_emit_node_(code, node->rhs);
-        ArrayPush(code, arm64_pop_(REG_RHS));    // rhs was pushed last
-        ArrayPush(code, arm64_pop_(REG_RESULT)); // lhs
+        jit_emit_node_(em, node->lhs);
+        jit_emit_node_(em, node->rhs);
+        ArrayPush(&em->code, arm64_pop_(REG_RHS));    // rhs was pushed last
+        ArrayPush(&em->code, arm64_pop_(REG_RESULT)); // lhs
 
         if (node->kind == NodeKind_Add)
         {
-            ArrayPush(code, arm64_add_(REG_RESULT, REG_RESULT, REG_RHS));
+            ArrayPush(&em->code, arm64_add_(REG_RESULT, REG_RESULT, REG_RHS));
         }
         else if (node->kind == NodeKind_Sub)
         {
-            ArrayPush(code, arm64_sub_(REG_RESULT, REG_RESULT, REG_RHS));
+            ArrayPush(&em->code, arm64_sub_(REG_RESULT, REG_RESULT, REG_RHS));
         }
         else if (node->kind == NodeKind_Mul)
         {
-            ArrayPush(code, arm64_mul_(REG_RESULT, REG_RESULT, REG_RHS));
+            ArrayPush(&em->code, arm64_mul_(REG_RESULT, REG_RESULT, REG_RHS));
         }
         else
         {
-            // arm64 sdiv yields 0 for a zero divisor and never traps.
-            ArrayPush(code, arm64_sdiv_(REG_RESULT, REG_RESULT, REG_RHS));
+            jit_emit_div_(em, REG_RESULT, REG_RESULT, REG_RHS);
         }
     }
     break;
@@ -175,7 +235,22 @@ static void jit_emit_node_(InstArray *code, Node *node)
     }
     break;
     }
-    ArrayPush(code, arm64_push_(REG_RESULT));
+    ArrayPush(&em->code, arm64_push_(REG_RESULT));
+}
+
+static char *jit_trap_messages_[] = {
+    "no trap",
+    "division by zero",
+};
+StaticAssert(ArrayCount(jit_trap_messages_) == TrapKind_COUNT, jit_trap_messages_complete);
+
+char *jit_trap_message(TrapKind kind)
+{
+    if ((u32)kind >= TrapKind_COUNT)
+    {
+        return "an unknown trap";
+    }
+    return jit_trap_messages_[kind];
 }
 
 static b32 jit_install_(Jit *jit, u32 *code, u64 count, JitFunc *out)
@@ -233,22 +308,24 @@ void jit_shutdown(Jit *jit)
     MemoryZeroStruct(jit);
 }
 
-b32 jit_compile(Jit *jit, Arena *scratch, Node *ast, JitFunc *out)
+b32 jit_compile(Jit *jit, Arena *scratch, Node *ast, i64 *trap, JitFunc *out)
 {
     *out = 0;
 
     Temp temp = temp_begin(scratch);
 
-    InstArray code;
-    ArrayInit(&code, scratch);
-    jit_emit_node_(&code, ast);
-    ArrayPush(&code, arm64_pop_(REG_RESULT)); // the whole expression's value
-    ArrayPush(&code, arm64_ret_());
+    Emitter em = {0};
+    em.trap    = trap;
+    ArrayInit(&em.code, scratch);
+
+    jit_emit_node_(&em, ast);
+    ArrayPush(&em.code, arm64_pop_(REG_RESULT)); // the whole expression's value
+    ArrayPush(&em.code, arm64_ret_());
 
     b32 result = 0;
-    if (code.v != 0)
+    if (em.code.v != 0)
     {
-        result = jit_install_(jit, code.v, code.count, out);
+        result = jit_install_(jit, em.code.v, em.code.count, out);
     }
 
     temp_end(temp);

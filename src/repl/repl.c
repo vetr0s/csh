@@ -27,9 +27,12 @@ b32 repl_init(Repl *repl)
 
     sym_init(&repl->syms, repl->session);
 
+    // Lives in the session arena because compiled code holds its address.
+    repl->trap = PushStruct(repl->session, i64);
+
     // `it` is an ordinary symbol, so reading it needs no special case in the
     // lexer, the parser, or codegen. Only the write in repl_eval_ is special.
-    if (sym_declare(&repl->syms, Str8Lit("it")) == 0)
+    if (repl->trap == 0 || sym_declare(&repl->syms, Str8Lit("it")) == 0)
     {
         repl_shutdown(repl);
         return 0;
@@ -84,14 +87,25 @@ static void repl_eval_(Repl *repl, Str8 line)
     }
 
     JitFunc func = 0;
-    if (!jit_compile(&repl->jit, repl->scratch, ast, &func))
+    if (!jit_compile(&repl->jit, repl->scratch, ast, repl->trap, &func))
     {
         printf("error: out of code space\n");
         temp_end(scratch);
         return;
     }
 
-    i64 value = func();
+    *repl->trap = TrapKind_None;
+    i64 value   = func();
+
+    // The value is whatever the trapping operation left behind, so it is not
+    // worth printing. A name declared on a trapping line stays declared and
+    // holds zero, because check_resolve created it before any of this ran.
+    if (*repl->trap != TrapKind_None)
+    {
+        printf("error: %s\n", jit_trap_message((TrapKind)*repl->trap));
+        temp_end(scratch);
+        return;
+    }
 
     // A declaration is a statement: it neither prints nor moves `it`.
     if (ast->kind != NodeKind_Decl)

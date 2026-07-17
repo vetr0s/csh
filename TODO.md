@@ -5,12 +5,14 @@ is the worklist.
 
 ## Next
 
-- [ ] **Decide how division by zero reports.** arm64 `sdiv` yields 0 and never
-      traps, so `5 / 0` is currently a confident wrong answer. This is the first
-      real instance of the brief's soft-failure question, and whatever is chosen
-      sets the pattern for every fallible operation after it.
 - [ ] Reclaim code space, or accept the leak and say so. Every line's compiled
       bytes live until the session ends. `Jit.pos` only moves forward.
+- [ ] A declaration that traps still declares its name, holding zero.
+      `i64 z = 5 / 0;` errors, and `z` is then 0 rather than absent. Fixing it
+      means deferring the declaration until the line has run.
+- [ ] Replace the trap channel with the brief's tagged fallible values, once
+      there is a type system to express them. The trap slot is a real answer,
+      not a placeholder, but it is not the destination.
 
 ## Language
 
@@ -18,7 +20,9 @@ is the worklist.
       checker, and it is where the fixed-width types from `base_types.h` should
       surface as language types.
 - [ ] Strings. Needed before anything shell-shaped is possible.
-- [ ] Control flow: `if`, `while`. Needs branches and labels in the backend.
+- [ ] Control flow: `if`, `while`. The backend already has `cbz`, `b`, and
+      forward-reference patching, which division by zero forced. Labels and
+      comparison operators are what is missing.
 - [ ] Functions. Needs a calling convention, a prologue and epilogue, and a
       decision about whether a function's locals live on the machine stack or in
       an arena.

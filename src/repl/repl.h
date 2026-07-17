@@ -22,6 +22,7 @@ struct Repl
     Arena *scratch; // tokens, tree, instruction buffer
     Jit jit;
     SymTable syms;
+    i64 *trap; // where compiled code reports a runtime failure
 };
 
 b32 repl_init(Repl *repl);

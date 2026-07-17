@@ -202,6 +202,9 @@ later, and `TODO.md` tracks it.
 Integer literals load with `movz` and up to three `movk`. A negative value fills
 all four halfwords and so costs four instructions.
 
+The backend has `cbz` and `b`, and patches a branch's offset once its target is
+known. Division by zero forced that machinery; control flow will reuse it.
+
 == Compile Granularity
 
 #undecided
@@ -441,37 +444,78 @@ The one thing csh must not do is confidently answer a different question than
 the one asked. This is the failure bash normalises, with its ignored exit codes
 and its unquoted expansions.
 
-Two cases exist so far and were treated as bugs, not curiosities:
+Three cases exist so far and were treated as bugs, not curiosities:
 
 - An integer literal too large for `i64` is a diagnostic, not a wrap.
 - A line longer than the input buffer is rejected. It used to be silently
   truncated, which meant a 6001-byte expression printed a confident, wrong
   `2048`. Truncation is now detected and the rest of the line discarded.
+- Division by zero reports, rather than quietly yielding the zero that arm64
+  hands back. See below.
 
 == Division By Zero
 
-#undecided
+#done
 
-`5 / 0` currently evaluates to 0, because arm64 `sdiv` yields zero for a zero
-divisor and never traps. That is exactly the silent wrongness described above,
-and it is the first real instance of the fallible-operation question.
+`5 / 0` reports an error and the session lives.
 
-Whatever is chosen here sets the pattern for everything fallible that follows,
-so it is worth deciding properly rather than patching:
+```
+csh> 5 / 0
+error: division by zero
+csh> 42
+42
+```
 
-- *Check and report at runtime.* Emit a compare and a branch around every
-  division. Costs instructions on every division to catch a case that is
-  usually a bug.
-- *Return a tagged value.* The brief's soft-failure design: a fallible operation
-  returns something that carries failure, and the compiler nudges when it is
-  used unchecked. This is the principled answer and the largest one, because it
-  needs a type system to express it.
-- *Trap.* Emit a deliberate fault. Loud and cheap, but it is a crash, and a
-  shell should not die because you typed `5 / 0`.
+arm64 `sdiv` yields zero for a zero divisor and never traps, so without a check
+this was a confident wrong answer, which is the one thing csh must not do.
 
-The second is the direction the brief argues for. The first is what is
-affordable before types exist. Choosing the first as an interim step is
-defensible only if it does not become the permanent answer by accident.
+Three answers were possible. Trapping was rejected: it is loud and cheap, but a
+shell must not die because you typed `5 / 0`. Returning a tagged value is the
+brief's soft-failure design and is the eventual destination, but it needs a type
+system to express and so is not affordable yet. A runtime check is what is
+affordable now, and it is a real answer rather than a placeholder.
+
+=== The Trap Channel
+
+The generated code takes a `trap` slot, an ordinary `i64` in the session arena
+whose address is baked into the code like any variable's. Division emits a
+branch around itself:
+
+```
+    cbz   x1, fail        // divisor is zero
+    sdiv  x0, x0, x1
+    b     done
+fail:
+    mov   x2, #TrapKind_DivideByZero
+    mov   x3, #&trap
+    str   x2, [x3]
+    mov   x0, #0
+done:
+```
+
+The prompt clears the slot, calls, and reads it back. A non-zero slot means the
+value is meaningless and an error is printed instead.
+
+The trap path *falls through* rather than returning. Returning from the middle
+of an expression would strand whatever operands the surrounding expression had
+already pushed, and balancing that would need a prologue that nothing else here
+wants. Carrying on with a zero costs nothing, because the caller throws the
+value away.
+
+This is the first thing in csh that needed branches, so the backend grew `cbz`,
+`b`, and the patching that fills a branch's offset in once its target is known.
+Control flow needs all of that anyway.
+
+=== Consequences
+
+A declaration that traps leaves its name declared, holding zero, because
+`check.c` created the name before any code ran. `i64 z = 5 / 0;` reports the
+error, and `z` afterwards is 0 rather than absent. That is a wart. Fixing it
+means deferring the declaration until the line has run, which is a larger change
+than it looks.
+
+The check is genuinely at runtime, not folded at compile time. A zero divisor
+that only appears at runtime, as in `1000 / (5 - 5)`, is caught the same way.
 
 == Fallible Operations, Generally
 
@@ -572,9 +616,10 @@ dependency order.
 The things that are genuinely undecided, gathered from above. These are where
 the design work actually is.
 
-+ *Division by zero.* Runtime check, tagged value, or trap? Sets the pattern for
-  every fallible operation.
 + *Unchecked fallible results.* Hard error or warning?
++ *Tagged fallible values*, which need a type system, and which should eventually
+  replace the trap channel that division by zero introduced.
++ *A declaration that traps* still declares its name, holding zero.
 + *`exit()` inside an in-process pipe stage.* There is no process to exit.
 + *Compile granularity.* One line as one function, or explicit blocks?
 + *Reclaiming code space.* Compiled bytes currently live for the whole session.
