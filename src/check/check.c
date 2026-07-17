@@ -43,6 +43,21 @@ static void check_node_(Checker *checker, Node *node)
     }
     break;
 
+    case NodeKind_Assign:
+    {
+        // The target resolves first, so `nope = 1` reports nope rather than
+        // whatever the value happens to mention.
+        node->slot = sym_lookup(checker->syms, node->name);
+        if (node->slot == 0)
+        {
+            checker_fail_(checker,
+                          str8_concat(checker->arena, Str8Lit("undefined name: "), node->name));
+            return;
+        }
+        check_node_(checker, node->lhs);
+    }
+    break;
+
     case NodeKind_Decl:
     {
         // The initialiser resolves first, so `i64 x = x + 1;` reads the old x

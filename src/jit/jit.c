@@ -119,7 +119,10 @@ static void jit_emit_node_(InstArray *code, Node *node)
     }
     break;
 
+    // Both store to a slot check.c already resolved, so they only differ in
+    // whether the name was new. Codegen cannot tell and does not need to.
     case NodeKind_Decl:
+    case NodeKind_Assign:
     {
         jit_emit_node_(code, node->lhs);
         ArrayPush(code, arm64_pop_(REG_RESULT));

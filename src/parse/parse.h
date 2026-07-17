@@ -4,12 +4,14 @@
 //
 //     line    := decl | expr
 //     decl    := 'i64' IDENT '=' expr ';'
-//     expr    := term (('+' | '-') term)*
+//     expr    := IDENT '=' expr | addsub
+//     addsub  := term (('+' | '-') term)*
 //     term    := unary (('*' | '/') unary)*
 //     unary   := '-' unary | primary
 //     primary := INT | IDENT | '(' expr ')'
 //
-// A bare `x = 1` is not assignment yet. Redeclaring is how a value changes.
+// Assignment is an expression, as in C, so it is the lowest precedence, binds
+// to the right, and has the assigned value. Only a name may sit left of '='.
 
 #ifndef PARSE_H
 #define PARSE_H
@@ -22,6 +24,7 @@ enum NodeKind
     NodeKind_Int,
     NodeKind_Var,
     NodeKind_Decl,
+    NodeKind_Assign,
     NodeKind_Add,
     NodeKind_Sub,
     NodeKind_Mul,
@@ -35,9 +38,9 @@ struct Node
 {
     NodeKind kind;
     i64 value; // NodeKind_Int only
-    Str8 name; // NodeKind_Var and NodeKind_Decl; borrows the source
+    Str8 name; // Var, Decl, and Assign; borrows the source
     i64 *slot; // filled by check_resolve, not by the parser
-    Node *lhs; // the operand for NodeKind_Neg, the initialiser for NodeKind_Decl
+    Node *lhs; // the operand of Neg, the value of Decl and Assign
     Node *rhs; // 0 for everything but a binary operator
 };
 

@@ -145,7 +145,7 @@ static Node *parser_term_(Parser *parser)
     return lhs;
 }
 
-static Node *parser_expr_(Parser *parser)
+static Node *parser_addsub_(Parser *parser)
 {
     Node *lhs = parser_term_(parser);
     while (!parser->failed &&
@@ -168,6 +168,41 @@ static Node *parser_expr_(Parser *parser)
         lhs       = node;
     }
     return lhs;
+}
+
+// The target is parsed as an ordinary operand and then checked, rather than
+// peeked at, because deciding on '=' needs the whole left side in hand first.
+static Node *parser_expr_(Parser *parser)
+{
+    Node *lhs = parser_addsub_(parser);
+    if (parser->failed || parser->token.kind != TokenKind_Assign)
+    {
+        return lhs;
+    }
+
+    if (lhs->kind != NodeKind_Var)
+    {
+        parser_fail_(parser, Str8Lit("only a name can go left of '='"));
+        return 0;
+    }
+    Str8 name = lhs->name;
+    parser_advance_(parser);
+
+    // Recursing here rather than looping is what makes `a = b = 1` bind right.
+    Node *value = parser_expr_(parser);
+    if (parser->failed)
+    {
+        return 0;
+    }
+
+    Node *node = parser_node_(parser, NodeKind_Assign);
+    if (node == 0)
+    {
+        return 0;
+    }
+    node->name = name;
+    node->lhs  = value;
+    return node;
 }
 
 // decl := 'i64' IDENT '=' expr ';'
