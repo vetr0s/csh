@@ -117,6 +117,23 @@ vsh adds two things to it: architecture detection, and an executable-memory pair
 (`os_reserve_exec`, `os_commit_exec`, `os_exec_write_begin`,
 `os_exec_write_end`). Both may be worth upstreaming once they settle.
 
+## Documentation
+
+| File | Contents |
+| --- | --- |
+| `docs/spec.typ` | The language specification. Marks every section BUILT, DECIDED, or OPEN, because most of vsh is still intention. |
+| `TODO.md` | The worklist. The spec explains, this one enumerates. |
+| `STYLE.md` | Conventions, and the authority on them. |
+
+```sh
+./scripts/docs.sh    # -> docs/spec.pdf
+```
+
+The PDF is not in git. A rebuild is ~200 KB and PDFs do not delta-compress, so
+every edit would add a whole fresh copy and the artifact would dwarf the source
+it came from. `docs/spec.typ` is plain text, so read it directly if you have no
+typst.
+
 ## Conventions
 
 `STYLE.md` is the authority and `.clang-format` settles formatting. Every

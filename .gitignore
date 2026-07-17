@@ -57,6 +57,9 @@ dkms.conf
 # Build outputs
 build/
 
+# Built documentation. Rebuild with scripts/docs.sh; the .typ source is tracked.
+docs/*.pdf
+
 # Emacs tags
 TAGS
 tags
