@@ -1,0 +1,42 @@
+# Allman braces, 4 spaces, 100 columns. This is the standard for this project.
+# See STYLE.md.
+---
+Language: Cpp
+BasedOnStyle: LLVM
+
+BreakBeforeBraces: Allman
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+PointerAlignment: Right
+DerivePointerAlignment: false
+ReferenceAlignment: Right
+
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+
+IndentCaseLabels: false
+SpaceBeforeParens: ControlStatements
+
+# base_os.h nests platform branches inside BASE_IMPLEMENTATION. Indenting those
+# buries #include <windows.h> under eight spaces, so directives stay at column 0.
+IndentPPDirectives: None
+
+AlignAfterOpenBracket: Align
+AlignConsecutiveMacros: AcrossEmptyLinesAndComments
+AlignConsecutiveAssignments: Consecutive
+AlignEscapedNewlines: Right
+AlignTrailingComments: true
+
+# Include order in base.h is load-bearing, so never reorder includes.
+SortIncludes: Never
+
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+SpacesBeforeTrailingComments: 1
