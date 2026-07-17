@@ -170,8 +170,8 @@ static Node *parser_addsub_(Parser *parser)
     return lhs;
 }
 
-// The target is parsed as an ordinary operand and then checked, rather than
-// peeked at, because deciding on '=' needs the whole left side in hand first.
+// Assignment sits inside expr because C puts it there. The spec supersedes that
+// and makes it a statement, which deletes this whole function. See parse.h.
 static Node *parser_expr_(Parser *parser)
 {
     Node *lhs = parser_addsub_(parser);
@@ -205,7 +205,8 @@ static Node *parser_expr_(Parser *parser)
     return node;
 }
 
-// decl := 'i64' IDENT '=' expr ';'
+// decl := 'i64' IDENT '=' expr ';', superseded by `x: i64 = 100`. Branching on
+// a leading type keyword is what stops working once a user can name a type.
 static Node *parser_decl_(Parser *parser)
 {
     parser_advance_(parser); // 'i64'

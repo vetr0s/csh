@@ -14,9 +14,14 @@ Early, and not yet a shell. vsh evaluates integer arithmetic with variables that
 persist across lines. There are no processes, pipes, redirection, strings,
 functions, control flow, or types beyond `i64`.
 
-That order is deliberate. The execution engine and the memory model are being
-proven before any syntax is designed around them. See `docs/spec.typ` for the
-whole picture and `TODO.md` for what is next.
+That order is deliberate. The execution engine and the memory model were proven
+before any syntax got designed around them.
+
+The syntax is now settled on paper and the code has not caught up. vsh is moving
+off C's declaration order to `x: i64 = 100;`, because C's form is not
+context-free and would force the parser to consult the symbol table. Read
+"Where The Code Lags" in `docs/spec.typ` for the exact gap, and `TODO.md` for
+what is next.
 
 ## Build
 
@@ -32,6 +37,11 @@ Only `src/main.c` reaches the compiler. Everything else arrives through
 `src/unity_build.c`. There is no build system to configure.
 
 ## Use
+
+> **The declaration syntax below is on its way out.** vsh is moving to
+> `x: i64 = 100;` with `x := 100` inference, and assignment is becoming a
+> statement. That is decided and not yet built, so what follows is what the
+> binary accepts *today*. See "Where The Code Lags" in `docs/spec.typ`.
 
 ```
 vsh> 2 + 3 * 4
@@ -51,7 +61,7 @@ vsh> ab
 A line is any number of statements, optionally ending in an expression with no
 semicolon. That trailing expression is the line's value and the only thing
 printed, so the semicolon means "discard this", as `foo();` does in C. `2 + 3`
-prints 5 and `2 + 3;` prints nothing.
+prints 5 and `2 + 3;` prints nothing. That rule is staying.
 
 Comments are `//` to end of line and `/* */`.
 

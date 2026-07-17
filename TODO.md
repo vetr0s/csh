@@ -3,12 +3,35 @@
 Ordered roughly by what blocks what. `docs/spec.typ` carries the reasoning; this
 is the worklist.
 
-## Next
+## Next: catch the code up to the decided syntax
+
+The syntax was settled on paper after the code was written, so these five are
+the standing gap. The spec chapter "Where The Code Lags" is the same list with
+reasons. Do them before types, because types are what the new form exists to
+make possible.
+
+- [ ] **`x: i64 = 100;`**, type after the name. Not cosmetic: C's order is not
+      context-free, and once a user can name a type, `Foo * x;` needs the symbol
+      table to disambiguate from multiplication. That would force `parse` to
+      depend on `sym` and kill the one-way `lex -> parse -> check` flow.
+      `NAME ':'` needs two tokens of lookahead and nothing else.
+- [ ] **`x := 100`**, inferred declaration. Same rule with the type omitted.
+      Still static, just not written twice. This is the form a prompt lives on.
+- [ ] **`X :: 100`**, constants. Same rule with `=` swapped for `:`. Opens the
+      door to `add :: proc(...)`, which is how functions get spelled.
+- [ ] **Assignment becomes a statement.** It is an expression today because C
+      does that, which stopped being a reason. Kills `if (x = 5)` by
+      construction. Costs `a = b = 1` and `1 + (a = 7)`, neither wanted.
+- [ ] **A block's value is its trailing expression.** A line already works this
+      way. Extending it to `{}` makes `if` an expression and means C's ternary
+      never needs to exist. Do it with control flow, not before.
+
+## Then
 
 - [ ] Reclaim code space, or accept the leak and say so. Every line's compiled
       bytes live until the session ends. `Jit.pos` only moves forward.
 - [ ] A declaration that traps still declares its name, holding zero.
-      `i64 z = 5 / 0;` errors, and `z` is then 0 rather than absent. Fixing it
+      `z: i64 = 5 / 0;` errors, and `z` is then 0 rather than absent. Fixing it
       means deferring the declaration until the line has run.
 - [ ] Replace the trap channel with the brief's tagged fallible values, once
       there is a type system to express them. The trap slot is a real answer,
@@ -36,6 +59,11 @@ is the worklist.
 
 Nothing here exists. All of it is the point of the project.
 
+- [ ] **Decide how a command is invoked.** `ls -la` parses as `ls` minus `la`.
+      This is the one that decides whether vsh is a shell or a calculator with
+      ambitions, and it blocks the pipe dispatcher. Options and their costs are
+      in the spec's Command Invocation chapter. A heuristic is disqualified:
+      guessing wrong runs a different command than the one typed.
 - [ ] `cd`, and the process-control builtins.
 - [ ] External processes: `fork`, `exec`, `pipe`, `dup2`, behind an explicit
       builtin rather than implicit in the syntax.

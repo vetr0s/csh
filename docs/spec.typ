@@ -38,6 +38,10 @@
   fill: rgb("#fdf0e3"), inset: (x: 5pt, y: 2pt), radius: 3pt,
   text(size: 7.5pt, weight: "bold", fill: rgb("#8a5a1a"), "OPEN"),
 )
+#let superseded = box(
+  fill: rgb("#fdeaea"), inset: (x: 5pt, y: 2pt), radius: 3pt,
+  text(size: 7.5pt, weight: "bold", fill: rgb("#8a1a1a"), "SUPERSEDED"),
+)
 
 // ─────────────────────────────────────────────
 //  Title Page
@@ -68,7 +72,7 @@
 
 This is a sketch, not a standard. vsh is early enough that most of what follows
 is intention rather than behaviour, and the document's main job is to keep those
-two apart. Every section carries one of three marks:
+two apart. Every section carries one of four marks:
 
 #v(0.5em)
 #table(
@@ -76,8 +80,9 @@ two apart. Every section carries one of three marks:
   stroke: none,
   align: (left, left),
   row-gutter: 0.7em,
-  done, [Built and exercised. The code does this today.],
+  done, [Built and exercised. The code does this today, and it is the intended design.],
   planned, [Decided, with a reason on record, but not written yet.],
+  superseded, [The code does this today, and a decision on record replaces it. Do not build on it. See the next chapter.],
   undecided, [Genuinely unsettled. Do not assume. These are the interesting parts.],
 )
 #v(0.5em)
@@ -85,7 +90,35 @@ two apart. Every section carries one of three marks:
 Where a decision was made for a reason, the reason is written down. Reversing a
 decision is cheap; rediscovering why it was made is not.
 
+This document describes the language vsh is meant to be. Where the code has not
+caught up, the section says so and the next chapter lists every gap in one
+place. Nothing here is aspiration wearing a BUILT badge.
+
 The worklist lives in `TODO.md`. This document explains, that one enumerates.
+
+// ─────────────────────────────────────────────
+= Where The Code Lags
+
+The syntax below was decided after the implementation was written, so the two
+disagree. This is the whole list. Each row is tracked in `TODO.md`.
+
+#v(0.5em)
+#table(
+  columns: (1fr, 1fr),
+  stroke: 0.5pt + rgb("#cccccc"),
+  inset: 7pt,
+  [*The language*], [*What the code does today*],
+  [`x: i64 = 100;`], [`i64 x = 100;`],
+  [`x := 100;` infers], [nothing; the type is always written],
+  [`X :: 100;` is a constant], [nothing; there are no constants],
+  [assignment is a statement], [assignment is an expression, so `1 + (a = 7)` is 8],
+  [a block's value is its trailing expression], [only a *line* has that rule],
+)
+#v(0.5em)
+
+Everything else in this document is marked accurately. The lag exists because
+the syntax question was worked out on paper before code chased it, which is the
+cheap order to do it in.
 
 // ─────────────────────────────────────────────
 = Overview
@@ -305,35 +338,44 @@ parser.
 
 ```
 line    := stmt* expr?
-stmt    := decl | expr ';' | ';'
-decl    := 'i64' NAME '=' expr ';'
-expr    := NAME '=' expr | addsub
+stmt    := decl | assign | expr ';' | ';'
+decl    := NAME ':' type? ('=' | ':') expr ';'
+assign  := NAME '=' expr ';'
+expr    := addsub
 addsub  := term (('+' | '-') term)*
 term    := unary (('*' | '/') unary)*
 unary   := '-' unary | primary
 primary := INT | NAME | '(' expr ')'
 ```
 
-Recursive descent, one token of lookahead. The first error wins and the rest of
-the parse unwinds without reporting, so a reader sees the cause rather than its
-consequences.
+Recursive descent, two tokens of lookahead. Two rather than one because `NAME
+':'` is what marks a declaration and `NAME '='` an assignment, and both start
+the same way. The parse stays context-free either way, which is the point of the
+whole chapter below.
+
+The first error wins and the rest of the parse unwinds without reporting, so a
+reader sees the cause rather than its consequences.
 
 Trailing input is an error. Without that rule `1 2` would quietly evaluate to 1,
 which is the class of silent wrongness vsh exists to avoid.
 
+The parser still implements the older C-style form, `'i64' NAME '=' expr ';'`,
+with assignment inside `expr`. See "Where The Code Lags".
+
 == What The Semicolon Is For
 
-#done
+#done The rule is built. The declarations below are written in the decided
+syntax, not the syntax the code accepts today.
 
 A line is any number of statements, optionally ending in an expression with *no*
 semicolon. That trailing expression is the line's value and the only thing the
 prompt prints.
 
 ```
-vsh> i64 x = 100; i64 y = 100; i64 xy = x * y;
+vsh> x := 100; y := 100; xy := x * y;
 vsh> xy
 10000
-vsh> i64 a = 5; a * 2
+vsh> a := 5; a * 2
 10
 vsh> 2 + 3 * 4
 14
@@ -365,59 +407,143 @@ statements therefore costs one stack frame rather than ten thousand.
 
 The intent is that the fixed-width types the base layer already uses, `i8`
 through `u64`, `f32`, `f64`, and `b32`, surface as language types, and that
-`check.c` grows from a name resolver into a type checker to match. There is no
-schedule for this and no decision about implicit conversion, which is one of the
-things C gets wrong and is worth not repeating by reflex.
+`check.c` grows from a name resolver into a type checker to match.
+
+Widths are written, always. There is no `int` whose size depends on the machine,
+because the base layer already banned bare `int` in its own code and a language
+that compiles to a fixed architecture has no excuse for the vagueness. Odin
+keeps a platform-sized `int` alongside the explicit widths; vsh should not.
+
+#undecided Implicit conversion. C's integer promotions are a mistake worth not
+repeating by reflex, and the alternative, an explicit cast at every narrowing, is
+a real cost at a prompt. Not decided, and it does not need to be until there is a
+second numeric type.
 
 // ─────────────────────────────────────────────
 = Statements and Expressions
 
 == Declaration
 
-#done
+#superseded The code writes the type first, C-style. The form below replaces it.
 
-```c
-i64 x = 5;
+The type follows the name, after a colon, as in Odin and Pascal.
+
+```odin
+x: i64 = 100;
 ```
 
 A declaration is a *statement*, so it prints nothing and does not move `it`.
 
 The initialiser is resolved before the name is declared. That makes
-`i64 x = x + 1;` read the old `x`, and makes `i64 y = y;` an error rather than a
-read of storage that was created a moment earlier and never written.
+`x: i64 = x + 1;` read the old `x`, and makes `y: i64 = y;` an error rather than
+a read of storage that was created a moment earlier and never written.
+
+=== Why Not C's Order
+
+Not because it reads better, though it does. Because C's order is not
+context-free, and adopting it would cost vsh the pipeline it already has.
+
+The parser today decides declaration from expression on a single token:
+
+```c
+if (parser.token.kind == TokenKind_KeywordI64)
+```
+
+That works only while every type name is a keyword. The moment a user can name a
+type, `Foo * x;` is ambiguous: a pointer declaration, or `Foo` multiplied by
+`x`? C settles it by having the parser ask the symbol table what `Foo` is. That
+is the lexer hack, and it is why C is context-sensitive rather than
+context-free.
+
+vsh's flow is `lex -> parse -> check`, and `check` exists precisely so `parse`
+never needs to know what a name means. `parse.c` includes `lex.h` and nothing
+else. C's declaration order would force it to depend on `sym`, and the one-way
+flow would be gone, traded for a 1972 mistake.
+
+`NAME ':'` cannot be ambiguous. Two tokens of lookahead, no symbol table, and
+`parse` stays ignorant of names forever.
+
+C's declarator syntax is also broken on its own terms, which is worth saying out
+loud since "C-like" was the original brief. `int *a, b;` declares one pointer and
+one int. `int *a[10]` and `int (*a)[10]` are different types read inside out.
+Function pointer syntax is unreadable by consensus. Declaration-reflects-use did
+not survive contact with reality, and there is no reason to inherit it out of
+sentiment.
+
+== Inference and Constants
+
+#planned Nothing here is built.
+
+One form, `name : type = value`, with two knobs. Omit the type and it is
+inferred. Swap the `=` for a `:` and it is a constant.
+
+```odin
+x: i64 = 100;    // explicit type, variable
+x := 100;        // inferred, variable
+X :: 100;        // inferred, constant
+X: i64 : 100;    // explicit type, constant
+```
+
+Four meanings, one rule, nothing to memorise. This is Odin's scheme and it is
+taken wholesale because it is coherent.
+
+Inference is not dynamism. `x := 100` has exactly one type, fixed at the
+declaration, checked at compile time. It just is not written twice. That matters
+at a prompt, where `x := 100` is the thing typed all day and `x: i64 = 100` is
+the thing typed when the type is the point.
+
+Functions fall out of the same rule, as a constant of procedure type:
+
+```odin
+add :: proc(a: i64, b: i64) -> i64 { a + b }
+```
+
+which matters more than it looks. The brief says a command *is* a function, so
+`$1` and `$2` stop being bash's positional string soup and become named, typed
+parameters of a `proc`. The declaration syntax and the shell's argument model
+are the same decision.
 
 == Assignment
 
-#done
+#superseded The code makes assignment an expression. It becomes a statement.
 
-```c
-x = 9
+```odin
+x = 9;
 ```
 
-Assignment is an *expression*, as in C. It is the lowest precedence, binds to
-the right, and its value is the value assigned. So `a = b = 1` binds right, and
-`1 + (a = 7)` is 8. At the prompt it prints and moves `it`, because it is an
-expression and not a statement.
+Assignment is a *statement*. It has no value, so it cannot appear inside an
+expression.
 
-Only a name may sit left of `=`. The target is parsed as an ordinary operand and
-then rejected if it is not a name, because deciding on `=` needs the whole left
-side in hand first. `(a) = 2` is accepted, which is what C does with a
-parenthesised lvalue.
+That is a deliberate reversal. Assignment is an expression in the code today,
+and the reason on record was "as in C". C is no longer the authority, and this
+is the first thing that fails once it stops being one.
 
-Assigning to an undeclared name is an error. Declaration is the only thing that
-creates a name.
+What the change costs: `a = b = 1` chaining, and `1 + (a = 7)` evaluating to 8.
+Nobody wants the second, and the first is not missed by anyone who has lived
+without it.
+
+What it buys: `if (x = 5)` cannot be written. That is one of the most famous bug
+classes in C, and Go and Odin both make assignment a statement specifically to
+delete it. Deleting a bug class by construction, rather than by warning about
+it, is the same move as giving command exit and session exit different names.
+
+`:=` declares and `=` assigns, so the two are distinct on sight as well as in
+the grammar.
+
+Only a name may sit left of `=`. Assigning to an undeclared name is an error;
+declaration is the only thing that creates a name.
 
 == Redeclaration
 
-#done
+#done The behaviour is built. The examples below use the decided syntax.
 
 Redeclaring a name makes a *new slot* and shadows the old one. The old slot
 stays alive.
 
-```c
-i64 x = 5;
-i64 x = 9;   // a new binding, not an overwrite
-x            // 9
+```odin
+x := 5;
+x := 9;   // a new binding, not an overwrite
+x         // 9
 ```
 
 Three readings were possible. Updating the slot in place was the old behaviour,
@@ -426,8 +552,8 @@ value. Erroring was rejected because retyping a declaration is a normal way to
 work at a prompt.
 
 Shadowing wins for two reasons. The first is that it is the only option that
-survives a second type: `i64 x` and, later, `f64 x` cannot share storage, so an
-in-place update is not even expressible once types exist.
+survives a second type: `x: i64` and, later, `x: f64` cannot share storage, so
+an in-place update is not even expressible once types exist.
 
 The second is that its apparent cost is not a cost. Code compiled earlier holds
 the *old* address and keeps reading the old slot after a redeclaration. That
@@ -442,6 +568,11 @@ was worth settling first.
 
 `sym_lookup` therefore scans backward, so the newest declaration of a name wins,
 and shadowed entries stay in the table because code still points at their slots.
+
+Once `:=` exists, shadowing and mutation stop looking alike. `x := 9` makes a new
+binding and `x = 9` changes the one that is there, and the reader can tell which
+happened without knowing whether `x` already existed. Under the C form both are
+spelled with `=` and only the leading type tells them apart.
 
 == The Last Value
 
@@ -465,6 +596,88 @@ will read.
 Bash's other magic is answered the same way. `$1` and `$2` become ordinary typed
 function parameters, once functions exist, because a command in vsh is just a
 function.
+
+== Blocks Are Expressions
+
+#planned The rule holds for a line already. Extending it to `{}` is not built.
+
+A block's value is its trailing expression, the one with no semicolon. That is
+the rule a *line* already follows, and there is no reason for `{}` to follow a
+different one.
+
+```odin
+y := if x > 0 { 1 } else { -1 };
+```
+
+This is Rust's rule, and worth being honest about how vsh got here: it was not
+copied. It fell out of making files run silently, where a sequence of terminated
+statements has no value and a bare trailing expression does. Arriving at an
+existing language's rule from an unrelated direction is reasonable evidence the
+rule is right.
+
+Generalising it pays for itself immediately. `if` as an expression means C's
+ternary never needs to exist, which is one more piece of C syntax not inherited
+by reflex. It also means the prompt, a file, and a block are three uses of one
+idea rather than three rules.
+
+The `{}` form is not built, because there is no control flow yet. The decision is
+recorded now so that control flow is designed around it rather than retrofitted.
+
+// ─────────────────────────────────────────────
+= Command Invocation
+
+#undecided Nothing is decided. This is the question that decides whether vsh is
+a shell or a calculator with ambitions.
+
+== The Problem
+
+```
+ls -la
+```
+
+In an expression language, that is `ls` minus `la`. It is a real ambiguity, not
+a parsing difficulty, and no amount of cleverness dissolves it. Every C-like
+shell meets this wall and either commits to an answer or quietly stops being a
+shell.
+
+The constraint is not negotiable from either side. If `ls -la` cannot be typed,
+nobody lives in vsh, and living in it is the entire point. If `ls("-la")` is the
+only spelling, vsh is a scripting language with a REPL, which already exists and
+is not interesting.
+
+== What Is Disqualified
+
+A heuristic. Deciding by whether a name resolves to a command, or whether spaces
+surround the `-`, or what happened to parse cleanly. Guessing wrong means
+silently running a different command than the one typed, which is precisely the
+failure this document is organised against. `5 / 0` reports rather than answers
+zero for the same reason.
+
+== The Real Options
+
+#table(
+  columns: (auto, 1fr),
+  stroke: 0.5pt + rgb("#cccccc"),
+  inset: 7pt,
+  [*Parens always*], [`ls("-la")`. Unambiguous, no new syntax, one grammar. Nobody would live in it, which forfeits the goal rather than meeting it.],
+  [*A sigil*], [`!ls -la`, or some other mark, meaning "the rest of this line is shell words, not an expression". Honest, explicit, cheap to parse, and a constant reminder that you are leaving the typed world. Costs one character on the most common thing typed.],
+  [*Bare words at the prompt only*], [The prompt takes shell words, files take expressions. Terse where terseness matters. But it gives vsh two grammars and makes a session untranslatable to a script, which is the split the semicolon rule just worked to avoid.],
+  [*HolyC's half-answer*], [Parenless calls at the top level, so `Dir;` works but `Dir("*.c")` still needs parens for arguments. Solves the no-argument case, which is not the case that matters.],
+)
+
+== What It Touches
+
+This is not an isolated syntax choice, which is why it gets its own chapter
+rather than a bullet.
+
+It decides how the hybrid pipe reads, since `|` has to sit between things whose
+spelling is settled. It decides whether `$1` and `$2` really can be ordinary
+typed parameters, because that only works if a command is spelled like a
+function. And it decides whether a prompt session can be pasted into a file and
+run, which is the property that makes a shell teachable.
+
+Types, inference, and blocks can be built without answering this. The pipe
+dispatcher cannot.
 
 // ─────────────────────────────────────────────
 = Error Handling
@@ -553,7 +766,7 @@ Control flow needs all of that anyway.
 === Consequences
 
 A declaration that traps leaves its name declared, holding zero, because
-`check.c` created the name before any code ran. `i64 z = 5 / 0;` reports the
+`check.c` created the name before any code ran. `z: i64 = 5 / 0;` reports the
 error, and `z` afterwards is 0 rather than absent. That is a wart. Fixing it
 means deferring the declaration until the line has run, which is a larger change
 than it looks.
@@ -690,15 +903,22 @@ dependency order.
 The things that are genuinely undecided, gathered from above. These are where
 the design work actually is.
 
++ *How a command is invoked.* `ls -la` parses as subtraction. The largest one,
+  and the only one that decides whether vsh is a shell. It has its own chapter.
 + *Unchecked fallible results.* Hard error or warning?
 + *Tagged fallible values*, which need a type system, and which should eventually
   replace the trap channel that division by zero introduced.
 + *A declaration that traps* still declares its name, holding zero.
 + *`exit()` inside an in-process pipe stage.* There is no process to exit.
-+ *Compile granularity.* One line as one function, or explicit blocks?
++ *Compile granularity.* One line as one function, or explicit blocks? Now
+  entangled with blocks being expressions.
 + *Reclaiming code space.* Compiled bytes currently live for the whole session.
 + *Implicit conversion*, once there is more than one type.
 
 The brief these came from was explicit that several should be worked out
 *through* prototyping rather than settled on paper. That still holds. This
 document records the tension, not a verdict.
+
+Syntax was the exception. It was settled on paper deliberately, because the cost
+of changing a declaration form is a day of editing now and a rewrite later, and
+because the reason for choosing it was architectural rather than aesthetic.

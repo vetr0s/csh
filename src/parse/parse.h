@@ -1,6 +1,6 @@
 // parse.h - tokens to a tree.
 //
-// The grammar, tightest binding last:
+// The grammar this file implements, tightest binding last:
 //
 //     line    := stmt* expr?
 //     stmt    := decl | expr ';' | ';'
@@ -11,16 +11,20 @@
 //     unary   := '-' unary | primary
 //     primary := INT | IDENT | '(' expr ')'
 //
+// Two of those rules are superseded and waiting to be replaced. Declarations
+// become `x: i64 = 100`, because a leading type name is not context-free and
+// would force this file to consult sym.c. Assignment becomes a statement, so it
+// leaves `expr` entirely. Read "Where The Code Lags" in docs/spec.typ before
+// extending either one.
+//
 // A line is any number of statements, optionally ending in an expression with
 // no semicolon. That trailing expression is the line's value and the only thing
 // the prompt prints, so the semicolon is what says "discard this", exactly as
-// `foo();` does in C. A file of statements therefore runs silently.
+// `foo();` does in C. A file of statements therefore runs silently. That rule
+// stays.
 //
 // Parsing always yields a Block, even for a bare expression, so the caller has
 // one shape to handle.
-//
-// Assignment is an expression, as in C, so it is the lowest precedence, binds
-// to the right, and has the assigned value. Only a name may sit left of '='.
 
 #ifndef PARSE_H
 #define PARSE_H
