@@ -3,28 +3,19 @@
 Ordered roughly by what blocks what. `docs/spec.typ` carries the reasoning; this
 is the worklist.
 
-## Next: catch the code up to the decided syntax
+## Next
 
-The syntax was settled on paper after the code was written, so these five are
-the standing gap. The spec chapter "Where The Code Lags" is the same list with
-reasons. Do them before types, because types are what the new form exists to
-make possible.
-
-- [ ] **`x: i64 = 100;`**, type after the name. Not cosmetic: C's order is not
-      context-free, and once a user can name a type, `Foo * x;` needs the symbol
-      table to disambiguate from multiplication. That would force `parse` to
-      depend on `sym` and kill the one-way `lex -> parse -> check` flow.
-      `NAME ':'` needs two tokens of lookahead and nothing else.
-- [ ] **`x := 100`**, inferred declaration. Same rule with the type omitted.
-      Still static, just not written twice. This is the form a prompt lives on.
-- [ ] **`X :: 100`**, constants. Same rule with `=` swapped for `:`. Opens the
-      door to `add :: proc(...)`, which is how functions get spelled.
-- [ ] **Assignment becomes a statement.** It is an expression today because C
-      does that, which stopped being a reason. Kills `if (x = 5)` by
-      construction. Costs `a = b = 1` and `1 + (a = 7)`, neither wanted.
+- [ ] **Real compile-time constants.** `X :: 100` is an immutable binding today:
+      it takes a slot, is initialised at runtime, and the checker rejects
+      assignment to it. Odin's `::` folds into the instruction stream and has no
+      storage. Needs a constant folder. Decides whether `add :: proc(...)` can be
+      an immutable binding holding a code address, or needs the real thing.
 - [ ] **A block's value is its trailing expression.** A line already works this
       way. Extending it to `{}` makes `if` an expression and means C's ternary
       never needs to exist. Do it with control flow, not before.
+- [ ] Types and variables are separate namespaces, and the type side is a string
+      compare against `"i64"` in `check.c`. Fine with one type. A real type table
+      arrives with the second one.
 
 ## Then
 

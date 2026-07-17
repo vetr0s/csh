@@ -1,27 +1,36 @@
 // parse.h - tokens to a tree.
 //
-// The grammar this file implements, tightest binding last:
+// The grammar, tightest binding last:
 //
 //     line    := stmt* expr?
-//     stmt    := decl | expr ';' | ';'
-//     decl    := 'i64' IDENT '=' expr ';'
-//     expr    := IDENT '=' expr | addsub
-//     addsub  := term (('+' | '-') term)*
+//     stmt    := decl | assign | expr ';' | ';'
+//     decl    := IDENT ':' IDENT? ('=' | ':') expr ';'
+//     assign  := IDENT '=' expr ';'
+//     expr    := term (('+' | '-') term)*
 //     term    := unary (('*' | '/') unary)*
 //     unary   := '-' unary | primary
 //     primary := INT | IDENT | '(' expr ')'
 //
-// Two of those rules are superseded and waiting to be replaced. Declarations
-// become `x: i64 = 100`, because a leading type name is not context-free and
-// would force this file to consult sym.c. Assignment becomes a statement, so it
-// leaves `expr` entirely. Read "Where The Code Lags" in docs/spec.typ before
-// extending either one.
+// The four declaration forms are one rule. The type is optional and the
+// separator picks mutability:
+//
+//     x: i64 = 100;    explicit type, variable
+//     x := 100;        inferred, variable
+//     X :: 100;        inferred, constant
+//     X: i64 : 100;    explicit type, constant
+//
+// Two tokens of lookahead, and no more. IDENT ':' opens a declaration and
+// IDENT '=' an assignment, which is the whole reason the type moved after the
+// name: nothing here has to ask what a name means. The type is carried through
+// as a bare Str8 and check.c decides whether it names anything.
 //
 // A line is any number of statements, optionally ending in an expression with
 // no semicolon. That trailing expression is the line's value and the only thing
 // the prompt prints, so the semicolon is what says "discard this", exactly as
-// `foo();` does in C. A file of statements therefore runs silently. That rule
-// stays.
+// `foo();` does in C. A file of statements therefore runs silently.
+//
+// Assignment is a statement, not an expression, so `if (x = 5)` cannot be
+// written and `1 + (a = 7)` does not parse.
 //
 // Parsing always yields a Block, even for a bare expression, so the caller has
 // one shape to handle.
@@ -51,12 +60,14 @@ typedef struct Node Node;
 struct Node
 {
     NodeKind kind;
-    i64 value;  // Int
-    Str8 name;  // Var, Decl, Assign; borrows the source
-    i64 *slot;  // filled by check_resolve, not by the parser
-    Node *lhs;  // Neg's operand, Decl and Assign's value, Block's first statement
-    Node *rhs;  // a binary operator's right side, Block's trailing expression
-    Node *next; // the next statement in a Block, otherwise 0
+    i64 value;      // Int
+    Str8 name;      // Var, Decl, Assign; borrows the source
+    Str8 type_name; // Decl; empty means infer. Unresolved: check.c gives it meaning
+    b32 is_const;   // Decl; declared with ':' rather than '='
+    i64 *slot;      // filled by check_resolve, not by the parser
+    Node *lhs;      // Neg's operand, Decl and Assign's value, Block's first statement
+    Node *rhs;      // a binary operator's right side, Block's trailing expression
+    Node *next;     // the next statement in a Block, otherwise 0
 };
 
 // Statements chain through `next` rather than nesting, so a block of any length

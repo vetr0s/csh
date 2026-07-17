@@ -38,10 +38,6 @@
   fill: rgb("#fdf0e3"), inset: (x: 5pt, y: 2pt), radius: 3pt,
   text(size: 7.5pt, weight: "bold", fill: rgb("#8a5a1a"), "OPEN"),
 )
-#let superseded = box(
-  fill: rgb("#fdeaea"), inset: (x: 5pt, y: 2pt), radius: 3pt,
-  text(size: 7.5pt, weight: "bold", fill: rgb("#8a1a1a"), "SUPERSEDED"),
-)
 
 // ─────────────────────────────────────────────
 //  Title Page
@@ -72,7 +68,7 @@
 
 This is a sketch, not a standard. vsh is early enough that most of what follows
 is intention rather than behaviour, and the document's main job is to keep those
-two apart. Every section carries one of four marks:
+two apart. Every section carries one of three marks:
 
 #v(0.5em)
 #table(
@@ -82,7 +78,6 @@ two apart. Every section carries one of four marks:
   row-gutter: 0.7em,
   done, [Built and exercised. The code does this today, and it is the intended design.],
   planned, [Decided, with a reason on record, but not written yet.],
-  superseded, [The code does this today, and a decision on record replaces it. Do not build on it. See the next chapter.],
   undecided, [Genuinely unsettled. Do not assume. These are the interesting parts.],
 )
 #v(0.5em)
@@ -90,35 +85,11 @@ two apart. Every section carries one of four marks:
 Where a decision was made for a reason, the reason is written down. Reversing a
 decision is cheap; rediscovering why it was made is not.
 
-This document describes the language vsh is meant to be. Where the code has not
-caught up, the section says so and the next chapter lists every gap in one
-place. Nothing here is aspiration wearing a BUILT badge.
+Nothing here is aspiration wearing a BUILT badge. Where the code and the
+language disagree, the section says so, and at the moment they do not disagree
+anywhere.
 
 The worklist lives in `TODO.md`. This document explains, that one enumerates.
-
-// ─────────────────────────────────────────────
-= Where The Code Lags
-
-The syntax below was decided after the implementation was written, so the two
-disagree. This is the whole list. Each row is tracked in `TODO.md`.
-
-#v(0.5em)
-#table(
-  columns: (1fr, 1fr),
-  stroke: 0.5pt + rgb("#cccccc"),
-  inset: 7pt,
-  [*The language*], [*What the code does today*],
-  [`x: i64 = 100;`], [`i64 x = 100;`],
-  [`x := 100;` infers], [nothing; the type is always written],
-  [`X :: 100;` is a constant], [nothing; there are no constants],
-  [assignment is a statement], [assignment is an expression, so `1 + (a = 7)` is 8],
-  [a block's value is its trailing expression], [only a *line* has that rule],
-)
-#v(0.5em)
-
-Everything else in this document is marked accurately. The lag exists because
-the syntax question was worked out on paper before code chased it, which is the
-cheap order to do it in.
 
 // ─────────────────────────────────────────────
 = Overview
@@ -313,9 +284,9 @@ the line buffer, and the next prompt overwrites it.
   inset: 7pt,
   [*Integer*], [One or more decimal digits. Value must fit `i64`; overflow is a diagnostic, never a wrap.],
   [*Name*], [`[A-Za-z_][A-Za-z0-9_]*`],
-  [*Keyword*], [`i64`. The only one.],
+  [*Keyword*], [None. `i64` is an ordinary name; see Declaration.],
   [*Operators*], [`+` `-` `*` `/` `=`],
-  [*Punctuation*], [`;` `(` `)`],
+  [*Punctuation*], [`:` `;` `(` `)`. One colon, never two: `:=` is a colon then an equals, and `::` is two colons.],
   [*Whitespace*], [Space, tab, carriage return, newline. Separates tokens, otherwise ignored.],
   [*Comments*], [`//` to end of line, and `/* */`, which does not nest. A `/*` that never closes is a diagnostic rather than a silent run to end of file.],
 )
@@ -359,13 +330,9 @@ reader sees the cause rather than its consequences.
 Trailing input is an error. Without that rule `1 2` would quietly evaluate to 1,
 which is the class of silent wrongness vsh exists to avoid.
 
-The parser still implements the older C-style form, `'i64' NAME '=' expr ';'`,
-with assignment inside `expr`. See "Where The Code Lags".
-
 == What The Semicolon Is For
 
-#done The rule is built. The declarations below are written in the decided
-syntax, not the syntax the code accepts today.
+#done
 
 A line is any number of statements, optionally ending in an expression with *no*
 semicolon. That trailing expression is the line's value and the only thing the
@@ -424,7 +391,7 @@ second numeric type.
 
 == Declaration
 
-#superseded The code writes the type first, C-style. The form below replaces it.
+#done
 
 The type follows the name, after a colon, as in Odin and Pascal.
 
@@ -441,9 +408,9 @@ a read of storage that was created a moment earlier and never written.
 === Why Not C's Order
 
 Not because it reads better, though it does. Because C's order is not
-context-free, and adopting it would cost vsh the pipeline it already has.
+context-free, and adopting it would have cost vsh the pipeline it already had.
 
-The parser today decides declaration from expression on a single token:
+The parser used to decide declaration from expression on a single token:
 
 ```c
 if (parser.token.kind == TokenKind_KeywordI64)
@@ -457,11 +424,17 @@ context-free.
 
 vsh's flow is `lex -> parse -> check`, and `check` exists precisely so `parse`
 never needs to know what a name means. `parse.c` includes `lex.h` and nothing
-else. C's declaration order would force it to depend on `sym`, and the one-way
-flow would be gone, traded for a 1972 mistake.
+else. C's declaration order would have forced it to depend on `sym`, trading the
+one-way flow for a 1972 mistake.
 
 `NAME ':'` cannot be ambiguous. Two tokens of lookahead, no symbol table, and
 `parse` stays ignorant of names forever.
+
+The payoff is visible in the code. `TokenKind_KeywordI64` is gone, and there are
+no keywords at all: `i64` lexes as an ordinary Ident and travels through the
+parser as text. `check.c` is the only file that knows `i64` names a type, which
+is why `x: bogus = 1;` reports `unknown type: bogus` from the checker rather
+than a parse error. Adding a type touches one file, and it is not this one.
 
 C's declarator syntax is also broken on its own terms, which is worth saying out
 loud since "C-like" was the original brief. `int *a, b;` declares one pointer and
@@ -472,7 +445,7 @@ sentiment.
 
 == Inference and Constants
 
-#planned Nothing here is built.
+#done
 
 One form, `name : type = value`, with two knobs. Omit the type and it is
 inferred. Swap the `=` for a `:` and it is a constant.
@@ -492,6 +465,30 @@ declaration, checked at compile time. It just is not written twice. That matters
 at a prompt, where `x := 100` is the thing typed all day and `x: i64 = 100` is
 the thing typed when the type is the point.
 
+With one type, inference has nothing to infer and the checker only validates
+that a written type names something. The machinery is in the right place
+regardless: `check.c` is the only file that knows `i64` is a type, so a second
+one arrives there and nowhere else.
+
+=== What A Constant Currently Is
+
+#undecided
+
+A constant is an *immutable binding*, not a compile-time value. `X :: 100` takes
+a slot like any variable, is initialised when the line runs, and is enforced by
+the checker: `X = 8;` is `cannot assign to the constant X`. That is real and
+useful, and it is not what `::` means in Odin.
+
+A true constant would be folded into the instruction stream and have no storage
+at all, which needs a constant folder that does not exist. `X :: 2 + 3` is
+evaluated at runtime today, exactly like `X := 2 + 3` with the assignment door
+shut.
+
+The gap matters for one thing on this page. `add :: proc(...)` treats a function
+as a constant of procedure type, and whether that works as an immutable binding
+holding a code address, or needs real compile-time constants, is not settled.
+Functions will settle it.
+
 Functions fall out of the same rule, as a constant of procedure type:
 
 ```odin
@@ -505,18 +502,18 @@ are the same decision.
 
 == Assignment
 
-#superseded The code makes assignment an expression. It becomes a statement.
+#done
 
 ```odin
 x = 9;
 ```
 
 Assignment is a *statement*. It has no value, so it cannot appear inside an
-expression.
+expression, and `1 + (a = 7)` does not parse.
 
-That is a deliberate reversal. Assignment is an expression in the code today,
-and the reason on record was "as in C". C is no longer the authority, and this
-is the first thing that fails once it stops being one.
+That was a deliberate reversal. Assignment used to be an expression here, and
+the reason on record was "as in C". C stopped being the authority, and this was
+the first thing that failed once it did.
 
 What the change costs: `a = b = 1` chaining, and `1 + (a = 7)` evaluating to 8.
 Nobody wants the second, and the first is not missed by anyone who has lived
@@ -530,12 +527,22 @@ it, is the same move as giving command exit and session exit different names.
 `:=` declares and `=` assigns, so the two are distinct on sight as well as in
 the grammar.
 
-Only a name may sit left of `=`. Assigning to an undeclared name is an error;
-declaration is the only thing that creates a name.
+The target is a bare name by construction, since `assign := IDENT '=' expr ';'`
+is matched on two tokens before anything is parsed. There is no lvalue check to
+get wrong, and `(a) = 2` is not an assignment at all. C accepts that; there was
+never a reason to.
+
+Assigning to an undeclared name is an error, and so is assigning to a constant.
+Declaration is the only thing that creates a name.
+
+One cost worth naming: a statement ends at `;`, so `x = 9` and `x := 9` both
+need one, even at the prompt. Only a trailing expression may go bare. That falls
+out of the semicolon rule rather than being a separate decision, and it is what
+lets a session be pasted into a file unchanged.
 
 == Redeclaration
 
-#done The behaviour is built. The examples below use the decided syntax.
+#done
 
 Redeclaring a name makes a *new slot* and shadows the old one. The old slot
 stays alive.
@@ -569,10 +576,10 @@ was worth settling first.
 `sym_lookup` therefore scans backward, so the newest declaration of a name wins,
 and shadowed entries stay in the table because code still points at their slots.
 
-Once `:=` exists, shadowing and mutation stop looking alike. `x := 9` makes a new
-binding and `x = 9` changes the one that is there, and the reader can tell which
-happened without knowing whether `x` already existed. Under the C form both are
-spelled with `=` and only the leading type tells them apart.
+Shadowing and mutation do not look alike. `x := 9` makes a new binding and
+`x = 9` changes the one that is there, and a reader can tell which happened
+without knowing whether `x` already existed. Under the C form both were spelled
+with `=` and only the leading type told them apart.
 
 == The Last Value
 
@@ -886,7 +893,7 @@ Where to look. Data flows top to bottom.
   [`src/lex/`], [Bytes to tokens. Allocates nothing; tokens borrow the source.],
   [`src/parse/`], [Tokens to a tree, on a caller's arena. Recursive descent.],
   [`src/sym/`], [The session symbol table. Owns names and slots. Hands out slot pointers only.],
-  [`src/check/`], [Name resolution. Fills each node's slot so codegen cannot fail on a name. Where the type checker goes.],
+  [`src/check/`], [Name resolution. Fills each node's slot so codegen cannot fail on a name, rejects assignment to a constant, and is the only file that knows `i64` names a type. Where the type checker goes.],
   [`src/jit/`], [Tree to arm64, and the executable code arena. arm64 only; `#error`s elsewhere.],
   [`src/repl/`], [Owns the session: both arenas, the symbol table, the code arena, and `it`. Drives the pipeline.],
 )

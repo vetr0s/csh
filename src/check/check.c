@@ -53,12 +53,14 @@ static void check_node_(Checker *checker, Node *node)
 
     case NodeKind_Var:
     {
-        node->slot = sym_lookup(checker->syms, node->name);
-        if (node->slot == 0)
+        SymRef ref = sym_lookup(checker->syms, node->name);
+        if (ref.slot == 0)
         {
             checker_fail_(checker,
                           str8_concat(checker->arena, Str8Lit("undefined name: "), node->name));
+            return;
         }
+        node->slot = ref.slot;
     }
     break;
 
@@ -66,27 +68,46 @@ static void check_node_(Checker *checker, Node *node)
     {
         // The target resolves first, so `nope = 1` reports nope rather than
         // whatever the value happens to mention.
-        node->slot = sym_lookup(checker->syms, node->name);
-        if (node->slot == 0)
+        SymRef ref = sym_lookup(checker->syms, node->name);
+        if (ref.slot == 0)
         {
             checker_fail_(checker,
                           str8_concat(checker->arena, Str8Lit("undefined name: "), node->name));
             return;
         }
+        if (ref.is_const)
+        {
+            checker_fail_(
+                checker,
+                str8_concat(checker->arena, Str8Lit("cannot assign to the constant "), node->name));
+            return;
+        }
+        node->slot = ref.slot;
         check_node_(checker, node->lhs);
     }
     break;
 
     case NodeKind_Decl:
     {
-        // The initialiser resolves first, so `i64 x = x + 1;` reads the old x
-        // and `i64 y = y;` fails instead of reading a slot it just made.
+        // The initialiser resolves first, so `x := x + 1;` reads the old x and
+        // `y := y;` fails instead of reading a slot it just made.
         check_node_(checker, node->lhs);
         if (checker->failed)
         {
             return;
         }
-        node->slot = sym_declare(checker->syms, node->name);
+
+        // The parser passed the type through as text. This is the only place
+        // that knows i64 is a type and not just a name someone typed.
+        if (node->type_name.size > 0 && !str8_equal(node->type_name, Str8Lit("i64")))
+        {
+            checker_fail_(checker,
+                          str8_concat(checker->arena, Str8Lit("unknown type: "), node->type_name));
+            return;
+        }
+
+        SymRef ref = sym_declare(checker->syms, node->name, node->is_const);
+        node->slot = ref.slot;
         if (node->slot == 0)
         {
             checker_fail_(checker, Str8Lit("out of memory"));

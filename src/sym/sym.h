@@ -11,8 +11,8 @@
 // scoping, and it is also the only thing that can work once a name can be
 // redeclared at a different type.
 //
-// The table only ever hands out slot pointers. Symbol records move when the
-// array grows, so nothing outside sym.c holds a Symbol *.
+// The table only ever hands out values, never a Symbol *. Symbol records move
+// when the array grows, so a pointer into it would dangle.
 
 #ifndef SYM_H
 #define SYM_H
@@ -24,6 +24,7 @@ struct Symbol
 {
     Str8 name;
     i64 *slot;
+    b32 is_const;
 };
 
 ArrayDef(SymbolArray, Symbol);
@@ -34,15 +35,24 @@ struct SymTable
     SymbolArray symbols;
 };
 
+// A copy of what the table knows about one name. `slot` is 0 when the name is
+// not declared.
+typedef struct SymRef SymRef;
+struct SymRef
+{
+    i64 *slot;
+    b32 is_const;
+};
+
 // `arena` is the session arena. It must outlive every compiled line, because
 // compiled code holds raw addresses into it.
 void sym_init(SymTable *table, Arena *arena);
 
-// The newest declaration of `name`, or 0 when there is none.
-i64 *sym_lookup(SymTable *table, Str8 name);
+// The newest declaration of `name`.
+SymRef sym_lookup(SymTable *table, Str8 name);
 
 // Always a new slot, zeroed. Any earlier declaration of the same name is
 // shadowed rather than replaced.
-i64 *sym_declare(SymTable *table, Str8 name);
+SymRef sym_declare(SymTable *table, Str8 name, b32 is_const);
 
 #endif // SYM_H

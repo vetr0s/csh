@@ -34,6 +34,7 @@ static Token lex_ident_(Lexer *lex)
 {
     Token token  = {0};
     token.offset = lex->pos;
+    token.kind   = TokenKind_Ident;
 
     u64 start = lex->pos;
     while (lex->pos < lex->src.size && lex_is_ident_cont_(lex->src.str[lex->pos]))
@@ -41,7 +42,6 @@ static Token lex_ident_(Lexer *lex)
         lex->pos += 1;
     }
     token.text = str8(lex->src.str + start, lex->pos - start);
-    token.kind = str8_equal(token.text, Str8Lit("i64")) ? TokenKind_KeywordI64 : TokenKind_Ident;
     return token;
 }
 
@@ -156,6 +156,12 @@ Token lex_next(Lexer *lex)
     case '=':
         token.kind = TokenKind_Assign;
         break;
+    // One colon, never two. `x := 1` is Colon then Assign and `X :: 1` is Colon
+    // then Colon, so `decl := NAME ':' type? ('=' | ':') expr ';'` covers all
+    // four declaration forms without a token per spelling.
+    case ':':
+        token.kind = TokenKind_Colon;
+        break;
     case ';':
         token.kind = TokenKind_Semi;
         break;
@@ -191,12 +197,12 @@ static char *lex_kind_names_[] = {
     "end of input",
     "an integer",
     "a name",
-    "'i64'",
     "'+'",
     "'-'",
     "'*'",
     "'/'",
     "'='",
+    "':'",
     "';'",
     "'('",
     "')'",

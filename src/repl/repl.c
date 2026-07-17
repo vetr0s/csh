@@ -32,7 +32,8 @@ b32 repl_init(Repl *repl)
 
     // `it` is an ordinary symbol, so reading it needs no special case in the
     // lexer, the parser, or codegen. Only the write in repl_eval_ is special.
-    if (repl->trap == 0 || sym_declare(&repl->syms, Str8Lit("it")) == 0)
+    // Not a constant: the prompt writes it every line.
+    if (repl->trap == 0 || sym_declare(&repl->syms, Str8Lit("it"), 0).slot == 0)
     {
         repl_shutdown(repl);
         return 0;
@@ -114,7 +115,7 @@ static b32 repl_eval_(Repl *repl, Str8 source)
     {
         // Looked up rather than cached, because redeclaring `it` makes a new
         // slot and the prompt should write the one the next line will read.
-        i64 *it = sym_lookup(&repl->syms, Str8Lit("it"));
+        i64 *it = sym_lookup(&repl->syms, Str8Lit("it")).slot;
         Assert(it != 0);
         *it = value;
         printf("%lld\n", (long long)value);

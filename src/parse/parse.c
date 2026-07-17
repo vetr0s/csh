@@ -9,7 +9,8 @@ struct Parser
 {
     Arena *arena;
     Lexer lexer;
-    Token token; // one token of lookahead
+    Token token; // the one being looked at
+    Token ahead; // the one after it, which is what separates decl from assign
     Str8 err;
     b32 failed;
 };
@@ -35,7 +36,8 @@ static void parser_fail_expected_(Parser *parser, Str8 expected)
 
 static void parser_advance_(Parser *parser)
 {
-    parser->token = lex_next(&parser->lexer);
+    parser->token = parser->ahead;
+    parser->ahead = lex_next(&parser->lexer);
 }
 
 static Node *parser_node_(Parser *parser, NodeKind kind)
@@ -145,7 +147,9 @@ static Node *parser_term_(Parser *parser)
     return lhs;
 }
 
-static Node *parser_addsub_(Parser *parser)
+// Assignment is not in here. It is a statement, so an expression can never
+// carry a side effect through '=' and `1 + (a = 7)` simply does not parse.
+static Node *parser_expr_(Parser *parser)
 {
     Node *lhs = parser_term_(parser);
     while (!parser->failed &&
@@ -170,27 +174,78 @@ static Node *parser_addsub_(Parser *parser)
     return lhs;
 }
 
-// Assignment sits inside expr because C puts it there. The spec supersedes that
-// and makes it a statement, which deletes this whole function. See parse.h.
-static Node *parser_expr_(Parser *parser)
+// Every statement below ends at ';'. Only a trailing expression may omit it,
+// and that is what the prompt prints.
+static b32 parser_eat_semi_(Parser *parser)
 {
-    Node *lhs = parser_addsub_(parser);
-    if (parser->failed || parser->token.kind != TokenKind_Assign)
+    if (parser->token.kind != TokenKind_Semi)
     {
-        return lhs;
-    }
-
-    if (lhs->kind != NodeKind_Var)
-    {
-        parser_fail_(parser, Str8Lit("only a name can go left of '='"));
+        parser_fail_expected_(parser, Str8Lit("';'"));
         return 0;
     }
-    Str8 name = lhs->name;
+    parser_advance_(parser);
+    return 1;
+}
+
+// decl := IDENT ':' IDENT? ('=' | ':') expr ';'
+//
+// Called with the ':' already known to be there, so the two advances below are
+// the name and the colon.
+static Node *parser_decl_(Parser *parser)
+{
+    Str8 name = parser->token.text;
+    parser_advance_(parser); // the name
+    parser_advance_(parser); // ':'
+
+    // Whether this names a type is not a question this file can answer, and
+    // that is the point. It goes through as text for check.c to resolve.
+    Str8 type_name = {0};
+    if (parser->token.kind == TokenKind_Ident)
+    {
+        type_name = parser->token.text;
+        parser_advance_(parser);
+    }
+
+    // ':' here rather than '=' is what makes it a constant, so `X :: 1` and
+    // `X: i64 : 1` are the same rule with the type left out of one.
+    b32 is_const = (parser->token.kind == TokenKind_Colon);
+    if (!is_const && parser->token.kind != TokenKind_Assign)
+    {
+        parser_fail_expected_(parser, Str8Lit("'=' or ':'"));
+        return 0;
+    }
     parser_advance_(parser);
 
-    // Recursing here rather than looping is what makes `a = b = 1` bind right.
+    Node *init = parser_expr_(parser);
+    if (parser->failed || !parser_eat_semi_(parser))
+    {
+        return 0;
+    }
+
+    Node *node = parser_node_(parser, NodeKind_Decl);
+    if (node == 0)
+    {
+        return 0;
+    }
+    node->name      = name;
+    node->type_name = type_name;
+    node->is_const  = is_const;
+    node->lhs       = init;
+    return node;
+}
+
+// assign := IDENT '=' expr ';'
+//
+// The target is a bare name by construction, so there is no lvalue check and
+// `(a) = 2` is not an assignment at all. C accepts that; there is no reason to.
+static Node *parser_assign_(Parser *parser)
+{
+    Str8 name = parser->token.text;
+    parser_advance_(parser); // the name
+    parser_advance_(parser); // '='
+
     Node *value = parser_expr_(parser);
-    if (parser->failed)
+    if (parser->failed || !parser_eat_semi_(parser))
     {
         return 0;
     }
@@ -205,50 +260,6 @@ static Node *parser_expr_(Parser *parser)
     return node;
 }
 
-// decl := 'i64' IDENT '=' expr ';', superseded by `x: i64 = 100`. Branching on
-// a leading type keyword is what stops working once a user can name a type.
-static Node *parser_decl_(Parser *parser)
-{
-    parser_advance_(parser); // 'i64'
-
-    if (parser->token.kind != TokenKind_Ident)
-    {
-        parser_fail_expected_(parser, Str8Lit("a name"));
-        return 0;
-    }
-    Str8 name = parser->token.text;
-    parser_advance_(parser);
-
-    if (parser->token.kind != TokenKind_Assign)
-    {
-        parser_fail_expected_(parser, Str8Lit("'='"));
-        return 0;
-    }
-    parser_advance_(parser);
-
-    Node *init = parser_expr_(parser);
-    if (parser->failed)
-    {
-        return 0;
-    }
-
-    if (parser->token.kind != TokenKind_Semi)
-    {
-        parser_fail_expected_(parser, Str8Lit("';'"));
-        return 0;
-    }
-    parser_advance_(parser);
-
-    Node *node = parser_node_(parser, NodeKind_Decl);
-    if (node == 0)
-    {
-        return 0;
-    }
-    node->name = name;
-    node->lhs  = init;
-    return node;
-}
-
 b32 parse_line(Arena *arena, Str8 src, Node **out_ast, Str8 *out_err)
 {
     *out_ast = 0;
@@ -257,7 +268,8 @@ b32 parse_line(Arena *arena, Str8 src, Node **out_ast, Str8 *out_err)
     Parser parser = {0};
     parser.arena  = arena;
     lex_init(&parser.lexer, src);
-    parser_advance_(&parser);
+    parser_advance_(&parser); // fills `ahead`
+    parser_advance_(&parser); // fills `token`
 
     Node *block = parser_node_(&parser, NodeKind_Block);
     Node *last  = 0;
@@ -270,10 +282,17 @@ b32 parse_line(Arena *arena, Str8 src, Node **out_ast, Str8 *out_err)
             continue;
         }
 
+        // The whole disambiguation, and no symbol table in sight. A name
+        // followed by ':' declares, a name followed by '=' assigns, and
+        // anything else is an expression.
         Node *stmt = 0;
-        if (parser.token.kind == TokenKind_KeywordI64)
+        if (parser.token.kind == TokenKind_Ident && parser.ahead.kind == TokenKind_Colon)
         {
             stmt = parser_decl_(&parser); // eats its own ';'
+        }
+        else if (parser.token.kind == TokenKind_Ident && parser.ahead.kind == TokenKind_Assign)
+        {
+            stmt = parser_assign_(&parser); // eats its own ';'
         }
         else
         {

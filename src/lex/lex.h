@@ -2,6 +2,10 @@
 //
 // The lexer holds a borrowed Str8 and a cursor. It allocates nothing, so a
 // token is only meaningful while the source it came from is alive.
+//
+// There are no keywords. `i64` is an ordinary Ident, because a type name is
+// only a name until check.c gives it meaning, and the moment the lexer knows
+// one type name the parser starts wanting to know the rest.
 
 #ifndef LEX_H
 #define LEX_H
@@ -14,12 +18,12 @@ enum TokenKind
     TokenKind_EOF,
     TokenKind_Int,
     TokenKind_Ident,
-    TokenKind_KeywordI64,
     TokenKind_Plus,
     TokenKind_Minus,
     TokenKind_Star,
     TokenKind_Slash,
     TokenKind_Assign,
+    TokenKind_Colon,
     TokenKind_Semi,
     TokenKind_LParen,
     TokenKind_RParen,
