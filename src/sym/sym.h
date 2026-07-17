@@ -5,6 +5,12 @@
 // variable declared earlier: codegen bakes the slot's address straight into the
 // instruction stream. csh owns the storage, not the compiler.
 //
+// Declaring a name that already exists makes a new slot and shadows the old
+// one. The old slot stays alive, because code compiled earlier holds its
+// address and must keep reading what it was compiled against. That is lexical
+// scoping, and it is also the only thing that can work once a name can be
+// redeclared at a different type.
+//
 // The table only ever hands out slot pointers. Symbol records move when the
 // array grows, so nothing outside sym.c holds a Symbol *.
 
@@ -32,11 +38,11 @@ struct SymTable
 // compiled code holds raw addresses into it.
 void sym_init(SymTable *table, Arena *arena);
 
-// 0 when `name` is not declared.
+// The newest declaration of `name`, or 0 when there is none.
 i64 *sym_lookup(SymTable *table, Str8 name);
 
-// Redeclaring a name hands back the existing slot rather than erroring, so code
-// already compiled against that address keeps working.
+// Always a new slot, zeroed. Any earlier declaration of the same name is
+// shadowed rather than replaced.
 i64 *sym_declare(SymTable *table, Str8 name);
 
 #endif // SYM_H

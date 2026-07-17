@@ -362,26 +362,39 @@ creates a name.
 
 == Redeclaration
 
-#undecided
+#done
 
-`i64 x = 5;` twice currently updates in place and reuses the slot. That was the
-only sensible reading when redeclaring was the only way to change a value. Now
-that assignment exists, it probably wants to mean something else.
+Redeclaring a name makes a *new slot* and shadows the old one. The old slot
+stays alive.
 
-The options and their costs:
+```c
+i64 x = 5;
+i64 x = 9;   // a new binding, not an overwrite
+x            // 9
+```
 
-#table(
-  columns: (auto, 1fr),
-  stroke: 0.5pt + rgb("#cccccc"),
-  inset: 7pt,
-  [*Update in place*], [Today's behaviour. Simple, and code compiled against the slot keeps working. But it makes the type annotation a lie the second time, and there is no way to say "I want a fresh one".],
-  [*Error*], [Honest, and pushes you to `x = 9`. But it is hostile in a REPL, where retyping a declaration is a normal way to work.],
-  [*Fresh slot, shadowing*], [Matches how a REPL usually feels. The cost is real: code already compiled holds the *old* address, so an existing function would keep reading the old slot after a redeclaration. That is a genuine trap and the reason this is still open.],
-)
+Three readings were possible. Updating the slot in place was the old behaviour,
+and it was the only sensible one while redeclaring was the only way to change a
+value. Erroring was rejected because retyping a declaration is a normal way to
+work at a prompt.
 
-The third option's cost is a direct consequence of baking addresses into
-compiled code. It is the first place where the persistence mechanism pushes back
-on the language design, and it is worth solving deliberately.
+Shadowing wins for two reasons. The first is that it is the only option that
+survives a second type: `i64 x` and, later, `f64 x` cannot share storage, so an
+in-place update is not even expressible once types exist.
+
+The second is that its apparent cost is not a cost. Code compiled earlier holds
+the *old* address and keeps reading the old slot after a redeclaration. That
+looks like a trap, but it is exactly lexical scoping, and it is what GHCi does:
+a function defined before a rebinding goes on seeing the binding it was defined
+against. Baking addresses into compiled code gives that behaviour for free
+rather than making it a bug to work around.
+
+Nothing observable follows from this yet, because a compiled line is called once
+and thrown away. It starts to matter the moment functions exist, which is why it
+was worth settling first.
+
+`sym_lookup` therefore scans backward, so the newest declaration of a name wins,
+and shadowed entries stay in the table because code still points at their slots.
 
 == The Last Value
 
@@ -397,7 +410,10 @@ entry in the symbol table, so no special case reaches the lexer, the parser, or
 codegen. Only the REPL's assignment to it is special.
 
 It is declared at startup like any other name, and it can be read, assigned, and
-even redeclared, all without any of those paths knowing it is special.
+even redeclared, all without any of those paths knowing it is special. The
+prompt looks its slot up rather than caching it, because redeclaring `it`
+shadows it with a new slot and the prompt should write the binding the next line
+will read.
 
 Bash's other magic is answered the same way. `$1` and `$2` become ordinary typed
 function parameters, once functions exist, because a command in csh is just a
@@ -556,8 +572,6 @@ dependency order.
 The things that are genuinely undecided, gathered from above. These are where
 the design work actually is.
 
-+ *Redeclaration.* Update in place, error, or shadow with a fresh slot? Shadowing
-  traps code already compiled against the old address.
 + *Division by zero.* Runtime check, tagged value, or trap? Sets the pattern for
   every fallible operation.
 + *Unchecked fallible results.* Hard error or warning?

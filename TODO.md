@@ -5,12 +5,6 @@ is the worklist.
 
 ## Next
 
-- [ ] **Decide what redeclaration means.** `i64 x = 5;` twice currently updates
-      in place and reuses the slot. That was the only sensible reading when
-      redeclaring was the only way to change a value. Now that `x = 9` exists it
-      probably wants to mean something else: an error, or a fresh slot that
-      shadows. A fresh slot has a real consequence, which is that code compiled
-      against the old address keeps writing to the old slot. See the spec.
 - [ ] **Decide how division by zero reports.** arm64 `sdiv` yields 0 and never
       traps, so `5 / 0` is currently a confident wrong answer. This is the first
       real instance of the brief's soft-failure question, and whatever is chosen

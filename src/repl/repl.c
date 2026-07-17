@@ -28,9 +28,8 @@ b32 repl_init(Repl *repl)
     sym_init(&repl->syms, repl->session);
 
     // `it` is an ordinary symbol, so reading it needs no special case in the
-    // lexer, the parser, or codegen. Only the assignment below is special.
-    repl->it = sym_declare(&repl->syms, Str8Lit("it"));
-    if (repl->it == 0)
+    // lexer, the parser, or codegen. Only the write in repl_eval_ is special.
+    if (sym_declare(&repl->syms, Str8Lit("it")) == 0)
     {
         repl_shutdown(repl);
         return 0;
@@ -97,7 +96,11 @@ static void repl_eval_(Repl *repl, Str8 line)
     // A declaration is a statement: it neither prints nor moves `it`.
     if (ast->kind != NodeKind_Decl)
     {
-        *repl->it = value;
+        // Looked up rather than cached, because redeclaring `it` makes a new
+        // slot and the prompt should write the one the next line will read.
+        i64 *it = sym_lookup(&repl->syms, Str8Lit("it"));
+        Assert(it != 0);
+        *it = value;
         printf("%lld\n", (long long)value);
     }
 

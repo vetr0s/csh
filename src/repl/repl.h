@@ -22,7 +22,6 @@ struct Repl
     Arena *scratch; // tokens, tree, instruction buffer
     Jit jit;
     SymTable syms;
-    i64 *it; // the last expression's value, read as an ordinary name
 };
 
 b32 repl_init(Repl *repl);
